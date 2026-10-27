@@ -92,14 +92,16 @@ this is an account-level manual step (see `docs/deployment.md`).*
 ## Phase 6 — Final verification ✅ / ⏳ (live parts pending accounts)
 
 - [x] typecheck 0 errors · lint clean · 39/39 tests · build exit 0
-- [x] build output code-split (vendor chunks + route-level dynamic imports)
+- [x] build output code-split (vendor chunks incl. verified supabase chunk)
 - [ ] Supabase migration run — needs user's Supabase project (manual)
 - [ ] Cloudflare Pages deploy — needs user's Cloudflare account (manual)
-- [ ] GitHub push — needs user authentication (commands provided)
+- [x] GitHub push — pushed to
+      <https://github.com/farhanv2w3-svg/BuildProof> (`main`, 4 commits)
 
 ## Phase 7 — Backup + git ✅
 
-- Timestamped backup folder + ZIP under `C:\Users\DELL\Documents\buildproof
-  backups`, excluding `node_modules`, `.git`, `.env`, `dist`.
-- Git feature commits on `main`; remote `https://github.com/farhanv2w3-svg/BuildProof`.
-- Push attempted; result recorded in the final report.
+- Timestamped backup folder + ZIP under
+  `C:\Users\DELL\Documents\buildproof backups\BuildProof-2026-10-27-193800`
+  (79 files verified; `node_modules`, `.git`, `.env`, `dist` excluded).
+- Git feature commits on `main`; remote
+  `https://github.com/farhanv2w3-svg/BuildProof`; push exit code 0.
