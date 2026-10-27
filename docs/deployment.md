@@ -107,7 +107,7 @@ Run through this once per environment:
 - [ ] Logged-out visitor sees published Proof Cards, no drafts, no team data.
 - [ ] Logged-in student can create a team and record a consented interview.
 - [ ] Privileged roles are absent until granted by the platform admin.
-- [ ] A refresh on `/app/dashboard` (deep link) does not 404.
+- [ ] A refresh on `/app` (deep link; the dashboard is the index route) does not 404.
 - [ ] Uploading evidence attaches to the team and previews via signed URL.
 - [ ] A student attempting to self-publish a Proof Card is blocked (DB guard).
 
