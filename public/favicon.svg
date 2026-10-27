@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#1a6b58"/>
+  <!-- ascending proof bars -->
+  <rect x="5.5" y="21" width="5.5" height="6.5" rx="1.3" fill="#ffffff" opacity="0.45"/>
+  <rect x="13.2" y="16" width="5.5" height="11.5" rx="1.3" fill="#ffffff" opacity="0.6"/>
+  <rect x="21" y="11" width="5.5" height="16.5" rx="1.3" fill="#ffffff" opacity="0.78"/>
+  <!-- verification check -->
+  <path d="M6.5 13.5l5.4 5.3L25 6.5" fill="none" stroke="#f2b53c" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
