@@ -9,13 +9,406 @@
 --    write to user_roles, and the signup trigger only ever grants the
 --    self-service roles ("student", "problem_owner").
 --  * Status values are text + CHECK constraints (easier to evolve than enums).
+--
+-- ORDERING (important — PostgreSQL validates SQL function bodies at CREATE
+-- time, so every statement is laid out in dependency order):
+--   Part 1  tables + indexes
+--   Part 2  shared helper functions (read the tables above)
+--   Part 3  RLS enablement + row level security policies (use the helpers)
+--   Part 4  trigger functions + triggers (use the helpers)
+--   Part 5  RPCs + grants
 -- ============================================================================
 
 create extension if not exists moddatetime; -- updated_at triggers
 
+-- ============================================================================
+-- PART 1 of 5 — TABLES
+-- ============================================================================
+
 -- ----------------------------------------------------------------------------
--- Shared helper predicates (SECURITY DEFINER, read-only over own tables)
+-- profiles
 -- ----------------------------------------------------------------------------
+
+create table public.profiles (
+  id uuid primary key references auth.users (id) on delete cascade,
+  full_name text not null default '' check (char_length(full_name) <= 120),
+  email text,
+  college text check (char_length(college) <= 160),
+  grad_year int check (grad_year between 2020 and 2035),
+  bio text check (char_length(bio) <= 400),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+-- ----------------------------------------------------------------------------
+-- institutions
+-- ----------------------------------------------------------------------------
+
+create table public.institutions (
+  id uuid primary key default gen_random_uuid(),
+  name text not null check (char_length(name) between 2 and 160),
+  city text check (char_length(city) <= 120),
+  created_at timestamptz not null default now()
+);
+
+create index institutions_name_idx on public.institutions (name);
+
+-- ----------------------------------------------------------------------------
+-- user_roles — the permission table. Writes restricted to platform admins.
+-- ----------------------------------------------------------------------------
+
+create table public.user_roles (
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  role text not null check (role in (
+    'student', 'facilitator', 'mentor', 'faculty_coordinator',
+    'problem_owner', 'institution_admin', 'platform_admin'
+  )),
+  institution_id uuid references public.institutions (id) on delete set null,
+  granted_by uuid references auth.users (id) on delete set null,
+  granted_at timestamptz not null default now()
+);
+
+-- NOTE: user_id references profiles (NOT auth.users) on purpose:
+--   * deleting an auth user cascades to profiles, which cascades here;
+--   * PostgREST can embed the profile via this single FK, under the constraint
+--     name the app queries with: profiles!user_roles_user_id_fkey.
+-- PK columns cannot be NULL, and institution_id is nullable for self-assigned
+-- roles, so uniqueness is enforced with a coalescing unique index instead.
+create unique index user_roles_uniq on public.user_roles
+  (user_id, role, coalesce(institution_id, '00000000-0000-0000-0000-000000000000'::uuid));
+
+create index user_roles_institution_idx on public.user_roles (institution_id);
+
+-- ----------------------------------------------------------------------------
+-- cohorts & gates
+-- ----------------------------------------------------------------------------
+
+create table public.cohorts (
+  id uuid primary key default gen_random_uuid(),
+  institution_id uuid not null references public.institutions (id) on delete cascade,
+  name text not null check (char_length(name) between 2 and 160),
+  description text check (char_length(description) <= 500),
+  status text not null default 'planning' check (status in ('planning', 'active', 'completed')),
+  interview_gate int not null default 8 check (interview_gate between 1 and 50),
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index cohorts_institution_idx on public.cohorts (institution_id);
+
+create table public.gates (
+  id uuid primary key default gen_random_uuid(),
+  cohort_id uuid not null references public.cohorts (id) on delete cascade,
+  name text not null check (char_length(name) between 2 and 120),
+  description text check (char_length(description) <= 500),
+  min_interviews int not null default 8 check (min_interviews between 0 and 100),
+  created_at timestamptz not null default now(),
+  unique (cohort_id, name)
+);
+
+-- ----------------------------------------------------------------------------
+-- cohort_members
+-- ----------------------------------------------------------------------------
+
+create table public.cohort_members (
+  id uuid primary key default gen_random_uuid(),
+  cohort_id uuid not null references public.cohorts (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  cohort_role text not null default 'student' check (cohort_role in (
+    'student', 'facilitator', 'faculty_coordinator', 'mentor'
+  )),
+  status text not null default 'proposed' check (status in ('proposed', 'active', 'left', 'removed')),
+  created_at timestamptz not null default now(),
+  unique (cohort_id, user_id)
+);
+
+create index cohort_members_user_idx on public.cohort_members (user_id);
+
+-- ----------------------------------------------------------------------------
+-- problems (public problem pool with screening)
+-- ----------------------------------------------------------------------------
+
+create table public.problems (
+  id uuid primary key default gen_random_uuid(),
+  title text not null check (char_length(title) between 4 and 160),
+  description text not null check (char_length(description) between 20 and 4000),
+  category text not null check (category in (
+    'education', 'local_business', 'accessibility', 'sustainability',
+    'public_services', 'operations', 'technology', 'other'
+  )),
+  affected_users text not null check (char_length(affected_users) between 2 and 500),
+  location text check (char_length(location) <= 160),
+  workaround text check (char_length(workaround) <= 1500),
+  evidence_basis text check (char_length(evidence_basis) <= 3000),
+  owner_name text check (char_length(owner_name) <= 160),
+  owner_contact text check (char_length(owner_contact) <= 200),
+  submitted_by uuid references auth.users (id) on delete set null,
+  status text not null default 'submitted' check (status in (
+    'submitted', 'screening', 'approved', 'rejected', 'needs_info'
+  )),
+  is_public boolean not null default false,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index problems_status_idx on public.problems (status);
+create index problems_submitted_by_idx on public.problems (submitted_by);
+
+create table public.problem_screenings (
+  id uuid primary key default gen_random_uuid(),
+  problem_id uuid not null references public.problems (id) on delete cascade,
+  reviewer_id uuid references auth.users (id) on delete set null,
+  decision text not null check (decision in ('approved', 'rejected', 'needs_info')),
+  notes text check (char_length(notes) <= 1000),
+  created_at timestamptz not null default now()
+);
+
+create index problem_screenings_problem_idx on public.problem_screenings (problem_id);
+
+-- ----------------------------------------------------------------------------
+-- teams, membership, invites
+-- ----------------------------------------------------------------------------
+
+create table public.teams (
+  id uuid primary key default gen_random_uuid(),
+  cohort_id uuid not null references public.cohorts (id) on delete cascade,
+  name text not null check (char_length(name) between 2 and 120),
+  status text not null default 'forming' check (status in (
+    'forming', 'active', 'paused', 'stopped', 'completed'
+  )),
+  problem_id uuid references public.problems (id) on delete set null,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index teams_cohort_idx on public.teams (cohort_id);
+
+create table public.team_members (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  user_id uuid not null references auth.users (id) on delete cascade,
+  member_role text not null default 'student' check (member_role in ('student', 'facilitator', 'mentor')),
+  status text not null default 'proposed' check (status in ('proposed', 'accepted', 'left', 'removed')),
+  created_at timestamptz not null default now(),
+  unique (team_id, user_id)
+);
+
+create index team_members_user_idx on public.team_members (user_id);
+
+create table public.team_invites (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  email text not null check (char_length(email) <= 200),
+  invited_by uuid references auth.users (id) on delete set null,
+  token uuid not null default gen_random_uuid(),
+  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined', 'revoked')),
+  created_at timestamptz not null default now(),
+  unique (token)
+);
+
+create index team_invites_team_idx on public.team_invites (team_id);
+
+-- ----------------------------------------------------------------------------
+-- interviews, attachments, feasibility, prototype, tests, decisions
+-- ----------------------------------------------------------------------------
+
+create table public.interviews (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  conducted_by uuid references auth.users (id) on delete set null,
+  interview_date date not null,
+  participant_label text not null check (char_length(participant_label) between 2 and 80),
+  participant_type text not null check (char_length(participant_type) between 2 and 100),
+  consent boolean not null default false,
+  key_findings text not null check (char_length(key_findings) between 5 and 4000),
+  pain_points text check (char_length(pain_points) <= 3000),
+  patterns text check (char_length(patterns) <= 3000),
+  status text not null default 'draft' check (status in ('draft', 'submitted', 'reviewed')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index interviews_team_idx on public.interviews (team_id);
+
+create table public.evidence_attachments (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  stage text not null check (stage in ('validation', 'feasibility', 'prototype')),
+  uploaded_by uuid references auth.users (id) on delete set null,
+  file_name text not null,
+  file_path text not null unique,
+  mime_type text not null,
+  size_bytes bigint not null check (size_bytes between 1 and 10485760), -- 10 MB
+  visibility text not null default 'reviewers' check (visibility in ('team', 'reviewers')),
+  created_at timestamptz not null default now()
+);
+
+create index evidence_team_idx on public.evidence_attachments (team_id);
+
+create table public.feasibility_reviews (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  author_id uuid references auth.users (id) on delete set null,
+  technical_feasibility text check (char_length(technical_feasibility) <= 3000),
+  cost_resources text check (char_length(cost_resources) <= 3000),
+  time_required text check (char_length(time_required) <= 3000),
+  user_access text check (char_length(user_access) <= 3000),
+  dependencies text check (char_length(dependencies) <= 3000),
+  risks text check (char_length(risks) <= 3000),
+  expected_value text check (char_length(expected_value) <= 3000),
+  recommended_next_step text check (char_length(recommended_next_step) <= 1500),
+  decision text check (decision in ('continue', 'revise', 'stop')),
+  status text not null default 'draft' check (status in ('draft', 'submitted', 'reviewed')),
+  reviewer_id uuid references auth.users (id) on delete set null,
+  reviewer_feedback text check (char_length(reviewer_feedback) <= 3000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index feasibility_team_idx on public.feasibility_reviews (team_id);
+
+create table public.prototype_tests (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  solution_description text check (char_length(solution_description) <= 4000),
+  test_plan text check (char_length(test_plan) <= 3000),
+  iterations text check (char_length(iterations) <= 3000),
+  decision text check (decision in ('continue', 'revise', 'stop')),
+  status text not null default 'draft' check (status in ('draft', 'submitted', 'reviewed')),
+  reviewer_id uuid references auth.users (id) on delete set null,
+  reviewer_feedback text check (char_length(reviewer_feedback) <= 3000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index prototype_team_idx on public.prototype_tests (team_id);
+
+create table public.user_tests (
+  id uuid primary key default gen_random_uuid(),
+  test_id uuid not null references public.prototype_tests (id) on delete cascade,
+  participant_label text not null check (char_length(participant_label) between 2 and 80),
+  users_approached int not null check (users_approached between 0 and 100000),
+  users_tested int not null check (users_tested between 0 and 100000),
+  tasks text not null check (char_length(tasks) between 2 and 3000),
+  outcome text not null check (char_length(outcome) between 2 and 3000),
+  feedback text check (char_length(feedback) <= 3000),
+  observed_problems text check (char_length(observed_problems) <= 3000),
+  created_at timestamptz not null default now()
+);
+
+create index user_tests_test_idx on public.user_tests (test_id);
+
+create table public.team_decisions (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  stage text not null check (stage in ('validation', 'feasibility', 'prototype')),
+  decision text not null check (decision in ('continue', 'pivot', 'stop', 'revise')),
+  rationale text not null check (char_length(rationale) between 10 and 1500),
+  decided_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now()
+);
+
+create index decisions_team_idx on public.team_decisions (team_id);
+
+-- ----------------------------------------------------------------------------
+-- proof cards & skills
+-- ----------------------------------------------------------------------------
+
+create table public.proof_cards (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  title text not null check (char_length(title) between 4 and 180),
+  problem_title text not null check (char_length(problem_title) between 4 and 180),
+  problem_summary text not null check (char_length(problem_summary) between 20 and 3000),
+  validation_summary text not null check (char_length(validation_summary) between 20 and 4000),
+  feasibility_summary text check (char_length(feasibility_summary) <= 3000),
+  built_summary text check (char_length(built_summary) <= 3000),
+  results_limitations text check (char_length(results_limitations) <= 3000),
+  tier int not null default 1 check (tier in (1, 2, 3)),
+  tier_set_by uuid references auth.users (id) on delete set null,
+  tier_note text check (char_length(tier_note) <= 1000),
+  review_status text not null default 'draft' check (review_status in (
+    'draft', 'submitted', 'changes_requested', 'approved', 'published', 'rejected'
+  )),
+  visibility text not null default 'private' check (visibility in ('private', 'public')),
+  published_at timestamptz,
+  published_by uuid references auth.users (id) on delete set null,
+  reviewer_notes text check (char_length(reviewer_notes) <= 3000),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index proof_cards_team_idx on public.proof_cards (team_id);
+create index proof_cards_public_idx on public.proof_cards (visibility, review_status);
+
+create table public.proof_card_skills (
+  id uuid primary key default gen_random_uuid(),
+  card_id uuid not null references public.proof_cards (id) on delete cascade,
+  skill text not null check (char_length(skill) between 2 and 80),
+  evidence_summary text not null check (char_length(evidence_summary) between 2 and 500)
+);
+
+create index proof_card_skills_card_idx on public.proof_card_skills (card_id);
+
+-- ----------------------------------------------------------------------------
+-- mentors, comments, notifications, audit log
+-- ----------------------------------------------------------------------------
+
+create table public.mentor_assignments (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  mentor_id uuid not null references auth.users (id) on delete cascade,
+  assigned_by uuid references auth.users (id) on delete set null,
+  active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (team_id, mentor_id)
+);
+
+create index mentor_assignments_mentor_idx on public.mentor_assignments (mentor_id);
+
+create table public.comments (
+  id uuid primary key default gen_random_uuid(),
+  team_id uuid not null references public.teams (id) on delete cascade,
+  author_id uuid references auth.users (id) on delete set null,
+  body text not null check (char_length(body) between 1 and 2000),
+  audience text not null default 'team' check (audience in ('team', 'reviewers')),
+  created_at timestamptz not null default now()
+);
+
+create index comments_team_idx on public.comments (team_id);
+
+create table public.notifications (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users (id) on delete cascade,
+  type text not null,
+  title text not null,
+  body text,
+  link text,
+  read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create index notifications_user_idx on public.notifications (user_id, read);
+
+create table public.audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  actor_id uuid references auth.users (id) on delete set null,
+  action text not null,
+  entity text not null,
+  entity_id uuid,
+  details jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index audit_logs_created_idx on public.audit_logs (created_at desc);
+
+-- ============================================================================
+-- PART 2 of 5 — SHARED HELPER PREDICATES
+-- (SECURITY DEFINER, read-only over the tables from Part 1 — all of which
+-- exist by the time this part runs.)
+-- ============================================================================
 
 -- Which platform-level roles a subject holds. Always filtered on auth.uid().
 create or replace function public.is_platform_admin()
@@ -195,24 +588,13 @@ as $$
   or public.is_platform_admin();
 $$;
 
--- ----------------------------------------------------------------------------
+-- ============================================================================
+-- PART 3 of 5 — ROW LEVEL SECURITY
+-- (RLS enablement + policies; every referenced helper exists from Part 2 and
+-- every referenced table exists from Part 1.)
+-- ============================================================================
+
 -- profiles
--- ----------------------------------------------------------------------------
-
-create table public.profiles (
-  id uuid primary key references auth.users (id) on delete cascade,
-  full_name text not null default '' check (char_length(full_name) <= 120),
-  email text,
-  college text check (char_length(college) <= 160),
-  grad_year int check (grad_year between 2020 and 2035),
-  bio text check (char_length(bio) <= 400),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create trigger profiles_updated_at before update on public.profiles
-for each row execute procedure moddatetime (updated_at);
-
 alter table public.profiles enable row level security;
 
 -- Directory-style read for authenticated users only (no anon access).
@@ -226,19 +608,7 @@ for update to authenticated
 using (id = auth.uid())
 with check (id = auth.uid());
 
--- ----------------------------------------------------------------------------
 -- institutions
--- ----------------------------------------------------------------------------
-
-create table public.institutions (
-  id uuid primary key default gen_random_uuid(),
-  name text not null check (char_length(name) between 2 and 160),
-  city text check (char_length(city) <= 120),
-  created_at timestamptz not null default now()
-);
-
-create index institutions_name_idx on public.institutions (name);
-
 alter table public.institutions enable row level security;
 
 create policy "authenticated users read institutions" on public.institutions
@@ -250,32 +620,7 @@ for all to authenticated
 using (public.is_platform_admin())
 with check (public.is_platform_admin());
 
--- ----------------------------------------------------------------------------
--- user_roles — the permission table. Writes restricted to platform admins.
--- ----------------------------------------------------------------------------
-
-create table public.user_roles (
-  user_id uuid not null references public.profiles (id) on delete cascade,
-  role text not null check (role in (
-    'student', 'facilitator', 'mentor', 'faculty_coordinator',
-    'problem_owner', 'institution_admin', 'platform_admin'
-  )),
-  institution_id uuid references public.institutions (id) on delete set null,
-  granted_by uuid references auth.users (id) on delete set null,
-  granted_at timestamptz not null default now()
-);
-
--- NOTE: user_id references profiles (NOT auth.users) on purpose:
---   * deleting an auth user cascades to profiles, which cascades here;
---   * PostgREST can embed the profile via this single FK, under the constraint
---     name the app queries with: profiles!user_roles_user_id_fkey.
--- PK columns cannot be NULL, and institution_id is nullable for self-assigned
--- roles, so uniqueness is enforced with a coalescing unique index instead.
-create unique index user_roles_uniq on public.user_roles
-  (user_id, role, coalesce(institution_id, '00000000-0000-0000-0000-000000000000'::uuid));
-
-create index user_roles_institution_idx on public.user_roles (institution_id);
-
+-- user_roles
 alter table public.user_roles enable row level security;
 
 -- Users can see their own roles; admins can see everything (needed for the
@@ -299,24 +644,7 @@ for all to authenticated
 using (public.is_platform_admin())
 with check (public.is_platform_admin());
 
--- ----------------------------------------------------------------------------
--- cohorts & gates
--- ----------------------------------------------------------------------------
-
-create table public.cohorts (
-  id uuid primary key default gen_random_uuid(),
-  institution_id uuid not null references public.institutions (id) on delete cascade,
-  name text not null check (char_length(name) between 2 and 160),
-  description text check (char_length(description) <= 500),
-  status text not null default 'planning' check (status in ('planning', 'active', 'completed')),
-  interview_gate int not null default 8 check (interview_gate between 1 and 50),
-  created_by uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index cohorts_institution_idx on public.cohorts (institution_id);
-
+-- cohorts
 alter table public.cohorts enable row level security;
 
 create policy "cohort members & staff read cohorts" on public.cohorts
@@ -335,19 +663,7 @@ for update to authenticated
 using (public.is_cohort_staff(id))
 with check (public.is_cohort_staff(id));
 
-create trigger cohorts_updated_at before update on public.cohorts
-for each row execute procedure moddatetime (updated_at);
-
-create table public.gates (
-  id uuid primary key default gen_random_uuid(),
-  cohort_id uuid not null references public.cohorts (id) on delete cascade,
-  name text not null check (char_length(name) between 2 and 120),
-  description text check (char_length(description) <= 500),
-  min_interviews int not null default 8 check (min_interviews between 0 and 100),
-  created_at timestamptz not null default now(),
-  unique (cohort_id, name)
-);
-
+-- gates
 alter table public.gates enable row level security;
 
 create policy "cohort members read gates" on public.gates
@@ -359,24 +675,7 @@ for all to authenticated
 using (public.is_cohort_staff(cohort_id))
 with check (public.is_cohort_staff(cohort_id));
 
--- ----------------------------------------------------------------------------
 -- cohort_members
--- ----------------------------------------------------------------------------
-
-create table public.cohort_members (
-  id uuid primary key default gen_random_uuid(),
-  cohort_id uuid not null references public.cohorts (id) on delete cascade,
-  user_id uuid not null references auth.users (id) on delete cascade,
-  cohort_role text not null default 'student' check (cohort_role in (
-    'student', 'facilitator', 'faculty_coordinator', 'mentor'
-  )),
-  status text not null default 'proposed' check (status in ('proposed', 'active', 'left', 'removed')),
-  created_at timestamptz not null default now(),
-  unique (cohort_id, user_id)
-);
-
-create index cohort_members_user_idx on public.cohort_members (user_id);
-
 alter table public.cohort_members enable row level security;
 
 -- Membership rows are visible to the member and to cohort staff.
@@ -411,62 +710,7 @@ create policy "members can leave" on public.cohort_members
 for delete to authenticated
 using (user_id = auth.uid() and status = 'proposed');
 
--- Guard: a member updating their own row may only change the status column.
-create function public.enforce_self_member_status_only()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if new.user_id = auth.uid() and not public.is_cohort_staff(new.cohort_id) then
-    if new.cohort_role <> old.cohort_role
-       or new.user_id <> old.user_id
-       or new.cohort_id <> old.cohort_id then
-      raise exception 'Members may only change their own membership status';
-    end if;
-    if new.status not in ('active', 'left') then
-      raise exception 'Members may only accept or leave a cohort';
-    end if;
-  end if;
-  return new;
-end;
-$$;
-
-create trigger cohort_members_self_guard
-before update on public.cohort_members
-for each row execute function public.enforce_self_member_status_only();
-
--- ----------------------------------------------------------------------------
--- problems (public problem pool with screening)
--- ----------------------------------------------------------------------------
-
-create table public.problems (
-  id uuid primary key default gen_random_uuid(),
-  title text not null check (char_length(title) between 4 and 160),
-  description text not null check (char_length(description) between 20 and 4000),
-  category text not null check (category in (
-    'education', 'local_business', 'accessibility', 'sustainability',
-    'public_services', 'operations', 'technology', 'other'
-  )),
-  affected_users text not null check (char_length(affected_users) between 2 and 500),
-  location text check (char_length(location) <= 160),
-  workaround text check (char_length(workaround) <= 1500),
-  evidence_basis text check (char_length(evidence_basis) <= 3000),
-  owner_name text check (char_length(owner_name) <= 160),
-  owner_contact text check (char_length(owner_contact) <= 200),
-  submitted_by uuid references auth.users (id) on delete set null,
-  status text not null default 'submitted' check (status in (
-    'submitted', 'screening', 'approved', 'rejected', 'needs_info'
-  )),
-  is_public boolean not null default false,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index problems_status_idx on public.problems (status);
-create index problems_submitted_by_idx on public.problems (submitted_by);
-
+-- problems
 alter table public.problems enable row level security;
 
 -- Everyone signed in sees approved problems plus their OWN submissions.
@@ -504,20 +748,7 @@ for update to authenticated
 using (public.is_platform_admin())
 with check (public.is_platform_admin());
 
-create trigger problems_updated_at before update on public.problems
-for each row execute procedure moddatetime (updated_at);
-
-create table public.problem_screenings (
-  id uuid primary key default gen_random_uuid(),
-  problem_id uuid not null references public.problems (id) on delete cascade,
-  reviewer_id uuid references auth.users (id) on delete set null,
-  decision text not null check (decision in ('approved', 'rejected', 'needs_info')),
-  notes text check (char_length(notes) <= 1000),
-  created_at timestamptz not null default now()
-);
-
-create index problem_screenings_problem_idx on public.problem_screenings (problem_id);
-
+-- problem_screenings
 alter table public.problem_screenings enable row level security;
 
 create policy "admins read & write screenings" on public.problem_screenings
@@ -534,25 +765,7 @@ using (exists (
   where p.id = problem_screenings.problem_id and p.submitted_by = auth.uid()
 ));
 
--- ----------------------------------------------------------------------------
--- teams, membership, invites
--- ----------------------------------------------------------------------------
-
-create table public.teams (
-  id uuid primary key default gen_random_uuid(),
-  cohort_id uuid not null references public.cohorts (id) on delete cascade,
-  name text not null check (char_length(name) between 2 and 120),
-  status text not null default 'forming' check (status in (
-    'forming', 'active', 'paused', 'stopped', 'completed'
-  )),
-  problem_id uuid references public.problems (id) on delete set null,
-  created_by uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index teams_cohort_idx on public.teams (cohort_id);
-
+-- teams
 alter table public.teams enable row level security;
 
 create policy "authorised users read teams" on public.teams
@@ -570,21 +783,7 @@ for update to authenticated
 using (public.can_edit_team_work(id) or public.can_review_team_work(id))
 with check (public.can_edit_team_work(id) or public.can_review_team_work(id));
 
-create trigger teams_updated_at before update on public.teams
-for each row execute procedure moddatetime (updated_at);
-
-create table public.team_members (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  user_id uuid not null references auth.users (id) on delete cascade,
-  member_role text not null default 'student' check (member_role in ('student', 'facilitator', 'mentor')),
-  status text not null default 'proposed' check (status in ('proposed', 'accepted', 'left', 'removed')),
-  created_at timestamptz not null default now(),
-  unique (team_id, user_id)
-);
-
-create index team_members_user_idx on public.team_members (user_id);
-
+-- team_members
 alter table public.team_members enable row level security;
 
 create policy "team members read membership" on public.team_members
@@ -618,19 +817,7 @@ create policy "members may leave teams" on public.team_members
 for delete to authenticated
 using (user_id = auth.uid() and status = 'proposed');
 
-create table public.team_invites (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  email text not null check (char_length(email) <= 200),
-  invited_by uuid references auth.users (id) on delete set null,
-  token uuid not null default gen_random_uuid(),
-  status text not null default 'pending' check (status in ('pending', 'accepted', 'declined', 'revoked')),
-  created_at timestamptz not null default now(),
-  unique (token)
-);
-
-create index team_invites_team_idx on public.team_invites (team_id);
-
+-- team_invites
 alter table public.team_invites enable row level security;
 
 create policy "team members read invites" on public.team_invites
@@ -646,28 +833,7 @@ for update to authenticated
 using (public.can_edit_team_work(team_id))
 with check (public.can_edit_team_work(team_id));
 
--- ----------------------------------------------------------------------------
--- interviews, attachments, feasibility, prototype, tests, decisions
--- ----------------------------------------------------------------------------
-
-create table public.interviews (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  conducted_by uuid references auth.users (id) on delete set null,
-  interview_date date not null,
-  participant_label text not null check (char_length(participant_label) between 2 and 80),
-  participant_type text not null check (char_length(participant_type) between 2 and 100),
-  consent boolean not null default false,
-  key_findings text not null check (char_length(key_findings) between 5 and 4000),
-  pain_points text check (char_length(pain_points) <= 3000),
-  patterns text check (char_length(patterns) <= 3000),
-  status text not null default 'draft' check (status in ('draft', 'submitted', 'reviewed')),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index interviews_team_idx on public.interviews (team_id);
-
+-- interviews
 alter table public.interviews enable row level security;
 
 create policy "authorised readers view interviews" on public.interviews
@@ -683,24 +849,7 @@ for update to authenticated
 using (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id))
 with check (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id));
 
-create trigger interviews_updated_at before update on public.interviews
-for each row execute procedure moddatetime (updated_at);
-
-create table public.evidence_attachments (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  stage text not null check (stage in ('validation', 'feasibility', 'prototype')),
-  uploaded_by uuid references auth.users (id) on delete set null,
-  file_name text not null,
-  file_path text not null unique,
-  mime_type text not null,
-  size_bytes bigint not null check (size_bytes between 1 and 10485760), -- 10 MB
-  visibility text not null default 'reviewers' check (visibility in ('team', 'reviewers')),
-  created_at timestamptz not null default now()
-);
-
-create index evidence_team_idx on public.evidence_attachments (team_id);
-
+-- evidence_attachments
 alter table public.evidence_attachments enable row level security;
 
 -- Reviewer-only attachments additionally require review rights.
@@ -725,28 +874,7 @@ create policy "uploaders & staff delete attachments" on public.evidence_attachme
 for delete to authenticated
 using (uploaded_by = auth.uid() or public.can_review_team_work(team_id));
 
-create table public.feasibility_reviews (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  author_id uuid references auth.users (id) on delete set null,
-  technical_feasibility text check (char_length(technical_feasibility) <= 3000),
-  cost_resources text check (char_length(cost_resources) <= 3000),
-  time_required text check (char_length(time_required) <= 3000),
-  user_access text check (char_length(user_access) <= 3000),
-  dependencies text check (char_length(dependencies) <= 3000),
-  risks text check (char_length(risks) <= 3000),
-  expected_value text check (char_length(expected_value) <= 3000),
-  recommended_next_step text check (char_length(recommended_next_step) <= 1500),
-  decision text check (decision in ('continue', 'revise', 'stop')),
-  status text not null default 'draft' check (status in ('draft', 'submitted', 'reviewed')),
-  reviewer_id uuid references auth.users (id) on delete set null,
-  reviewer_feedback text check (char_length(reviewer_feedback) <= 3000),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index feasibility_team_idx on public.feasibility_reviews (team_id);
-
+-- feasibility_reviews
 alter table public.feasibility_reviews enable row level security;
 
 create policy "authorised readers view feasibility" on public.feasibility_reviews
@@ -766,25 +894,7 @@ for update to authenticated
 using (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id))
 with check (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id));
 
-create trigger feasibility_updated_at before update on public.feasibility_reviews
-for each row execute procedure moddatetime (updated_at);
-
-create table public.prototype_tests (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  solution_description text check (char_length(solution_description) <= 4000),
-  test_plan text check (char_length(test_plan) <= 3000),
-  iterations text check (char_length(iterations) <= 3000),
-  decision text check (decision in ('continue', 'revise', 'stop')),
-  status text not null default 'draft' check (status in ('draft', 'submitted', 'reviewed')),
-  reviewer_id uuid references auth.users (id) on delete set null,
-  reviewer_feedback text check (char_length(reviewer_feedback) <= 3000),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index prototype_team_idx on public.prototype_tests (team_id);
-
+-- prototype_tests
 alter table public.prototype_tests enable row level security;
 
 create policy "authorised readers view prototype" on public.prototype_tests
@@ -800,24 +910,7 @@ for update to authenticated
 using (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id))
 with check (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id));
 
-create trigger prototype_updated_at before update on public.prototype_tests
-for each row execute procedure moddatetime (updated_at);
-
-create table public.user_tests (
-  id uuid primary key default gen_random_uuid(),
-  test_id uuid not null references public.prototype_tests (id) on delete cascade,
-  participant_label text not null check (char_length(participant_label) between 2 and 80),
-  users_approached int not null check (users_approached between 0 and 100000),
-  users_tested int not null check (users_tested between 0 and 100000),
-  tasks text not null check (char_length(tasks) between 2 and 3000),
-  outcome text not null check (char_length(outcome) between 2 and 3000),
-  feedback text check (char_length(feedback) <= 3000),
-  observed_problems text check (char_length(observed_problems) <= 3000),
-  created_at timestamptz not null default now()
-);
-
-create index user_tests_test_idx on public.user_tests (test_id);
-
+-- user_tests
 alter table public.user_tests enable row level security;
 
 create policy "authorised readers view user tests" on public.user_tests
@@ -834,18 +927,7 @@ with check (exists (
   where pt.id = user_tests.test_id and public.can_edit_team_work(pt.team_id)
 ));
 
-create table public.team_decisions (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  stage text not null check (stage in ('validation', 'feasibility', 'prototype')),
-  decision text not null check (decision in ('continue', 'pivot', 'stop', 'revise')),
-  rationale text not null check (char_length(rationale) between 10 and 1500),
-  decided_by uuid references auth.users (id) on delete set null,
-  created_at timestamptz not null default now()
-);
-
-create index decisions_team_idx on public.team_decisions (team_id);
-
+-- team_decisions
 alter table public.team_decisions enable row level security;
 
 create policy "authorised readers view decisions" on public.team_decisions
@@ -859,37 +941,7 @@ with check (
   or public.can_review_team_work(team_id)
 );
 
--- ----------------------------------------------------------------------------
--- proof cards & skills
--- ----------------------------------------------------------------------------
-
-create table public.proof_cards (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  title text not null check (char_length(title) between 4 and 180),
-  problem_title text not null check (char_length(problem_title) between 4 and 180),
-  problem_summary text not null check (char_length(problem_summary) between 20 and 3000),
-  validation_summary text not null check (char_length(validation_summary) between 20 and 4000),
-  feasibility_summary text check (char_length(feasibility_summary) <= 3000),
-  built_summary text check (char_length(built_summary) <= 3000),
-  results_limitations text check (char_length(results_limitations) <= 3000),
-  tier int not null default 1 check (tier in (1, 2, 3)),
-  tier_set_by uuid references auth.users (id) on delete set null,
-  tier_note text check (char_length(tier_note) <= 1000),
-  review_status text not null default 'draft' check (review_status in (
-    'draft', 'submitted', 'changes_requested', 'approved', 'published', 'rejected'
-  )),
-  visibility text not null default 'private' check (visibility in ('private', 'public')),
-  published_at timestamptz,
-  published_by uuid references auth.users (id) on delete set null,
-  reviewer_notes text check (char_length(reviewer_notes) <= 3000),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index proof_cards_team_idx on public.proof_cards (team_id);
-create index proof_cards_public_idx on public.proof_cards (visibility, review_status);
-
+-- proof_cards
 alter table public.proof_cards enable row level security;
 
 -- Draft/never-published cards: readable by the team, cohort staff, assigned
@@ -923,8 +975,186 @@ for update to authenticated
 using (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id))
 with check (public.can_edit_team_work(team_id) or public.can_review_team_work(team_id));
 
+-- proof_card_skills
+alter table public.proof_card_skills enable row level security;
+
+create policy "authorised readers view card skills" on public.proof_card_skills
+for select to authenticated
+using (exists (
+  select 1 from public.proof_cards pc
+  where pc.id = proof_card_skills.card_id
+    and (
+      public.can_read_team(pc.team_id)
+      or (pc.visibility = 'public' and pc.review_status in ('approved', 'published'))
+    )
+));
+
+-- Anonymous visitors of published cards may still see the skill evidence
+-- (the public Proof Card detail page fetches card + skills in one query).
+create policy "anon read published card skills" on public.proof_card_skills
+for select to anon
+using (exists (
+  select 1 from public.proof_cards pc
+  where pc.id = proof_card_skills.card_id
+    and pc.visibility = 'public'
+    and pc.review_status in ('approved', 'published')
+));
+
+create policy "team editors manage card skills" on public.proof_card_skills
+for all to authenticated
+using (exists (
+  select 1 from public.proof_cards pc
+  where pc.id = proof_card_skills.card_id and public.can_edit_team_work(pc.team_id)
+))
+with check (exists (
+  select 1 from public.proof_cards pc
+  where pc.id = proof_card_skills.card_id and public.can_edit_team_work(pc.team_id)
+));
+
+-- mentor_assignments
+alter table public.mentor_assignments enable row level security;
+
+create policy "authorised readers view assignments" on public.mentor_assignments
+for select to authenticated
+using (
+  mentor_id = auth.uid()
+  or public.can_read_team(team_id)
+);
+
+create policy "cohort staff assign mentors" on public.mentor_assignments
+for insert to authenticated
+with check (
+  exists (
+    select 1 from public.teams t
+    where t.id = mentor_assignments.team_id
+      and public.is_cohort_staff(t.cohort_id)
+  )
+);
+
+create policy "staff deactivate assignments" on public.mentor_assignments
+for update to authenticated
+using (assigned_by = auth.uid() or public.is_platform_admin())
+with check (assigned_by = auth.uid() or public.is_platform_admin());
+
+-- comments
+alter table public.comments enable row level security;
+
+create policy "authorised readers view comments" on public.comments
+for select to authenticated
+using (
+  public.can_read_team(team_id)
+  -- audience='reviewers' comments are additionally limited: they are visible
+  -- to reviewers and comments with audience='reviewers' are only readable by
+  -- those with review rights on this team (checked via can_review_team_work).
+  and (
+    audience = 'team'
+    or public.can_review_team_work(team_id)
+  )
+);
+
+create policy "team members comment" on public.comments
+for insert to authenticated
+with check (
+  public.can_edit_team_work(team_id)
+  and author_id = auth.uid()
+);
+
+-- notifications
+alter table public.notifications enable row level security;
+
+create policy "users read own notifications" on public.notifications
+for select to authenticated
+using (user_id = auth.uid());
+
+create policy "users update own notifications" on public.notifications
+for update to authenticated
+using (user_id = auth.uid())
+with check (user_id = auth.uid());
+
+-- Notifications are written by roles that legitimately report to other users:
+-- admins, institution admins, faculty coordinators, facilitators, mentors and
+-- problem owners. Regular students cannot insert (anti-spam boundary).
+create policy "reporter roles send notifications" on public.notifications
+for insert to authenticated
+with check (
+  public.has_any_role(array[
+    'platform_admin', 'institution_admin', 'faculty_coordinator',
+    'facilitator', 'mentor', 'problem_owner'
+  ])
+);
+
+-- audit_logs
+alter table public.audit_logs enable row level security;
+
+-- Only platform admins read the audit trail.
+create policy "platform admins read audit logs" on public.audit_logs
+for select to authenticated
+using (public.is_platform_admin());
+
+-- Reporter-level roles may append entries. Regular students cannot.
+create policy "reporter roles write audit logs" on public.audit_logs
+for insert to authenticated
+with check (
+  public.has_any_role(array[
+    'platform_admin', 'institution_admin', 'faculty_coordinator',
+    'facilitator', 'mentor', 'problem_owner'
+  ])
+);
+
+-- ============================================================================
+-- PART 4 of 5 — TRIGGER FUNCTIONS + TRIGGERS
+-- ============================================================================
+
+-- updated_at maintenance (extension function from moddatetime, Part-1 tables)
+create trigger profiles_updated_at before update on public.profiles
+for each row execute procedure moddatetime (updated_at);
+
+create trigger cohorts_updated_at before update on public.cohorts
+for each row execute procedure moddatetime (updated_at);
+
+create trigger problems_updated_at before update on public.problems
+for each row execute procedure moddatetime (updated_at);
+
+create trigger teams_updated_at before update on public.teams
+for each row execute procedure moddatetime (updated_at);
+
+create trigger interviews_updated_at before update on public.interviews
+for each row execute procedure moddatetime (updated_at);
+
+create trigger feasibility_updated_at before update on public.feasibility_reviews
+for each row execute procedure moddatetime (updated_at);
+
+create trigger prototype_updated_at before update on public.prototype_tests
+for each row execute procedure moddatetime (updated_at);
+
 create trigger proof_cards_updated_at before update on public.proof_cards
 for each row execute procedure moddatetime (updated_at);
+
+-- Guard: a member updating their own row may only change the status column.
+create function public.enforce_self_member_status_only()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.user_id = auth.uid() and not public.is_cohort_staff(new.cohort_id) then
+    if new.cohort_role <> old.cohort_role
+       or new.user_id <> old.user_id
+       or new.cohort_id <> old.cohort_id then
+      raise exception 'Members may only change their own membership status';
+    end if;
+    if new.status not in ('active', 'left') then
+      raise exception 'Members may only accept or leave a cohort';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+create trigger cohort_members_self_guard
+before update on public.cohort_members
+for each row execute function public.enforce_self_member_status_only();
 
 -- Guard trigger: only authorised reviewers may change tier or review state,
 -- only admins may publish publicly, and team members may only submit drafts.
@@ -1015,192 +1245,7 @@ create trigger proof_cards_review_guard
 before update on public.proof_cards
 for each row execute function public.proof_card_review_guard();
 
-create table public.proof_card_skills (
-  id uuid primary key default gen_random_uuid(),
-  card_id uuid not null references public.proof_cards (id) on delete cascade,
-  skill text not null check (char_length(skill) between 2 and 80),
-  evidence_summary text not null check (char_length(evidence_summary) between 2 and 500)
-);
-
-create index proof_card_skills_card_idx on public.proof_card_skills (card_id);
-
-alter table public.proof_card_skills enable row level security;
-
-create policy "authorised readers view card skills" on public.proof_card_skills
-for select to authenticated
-using (exists (
-  select 1 from public.proof_cards pc
-  where pc.id = proof_card_skills.card_id
-    and (
-      public.can_read_team(pc.team_id)
-      or (pc.visibility = 'public' and pc.review_status in ('approved', 'published'))
-    )
-));
-
--- Anonymous visitors of published cards may still see the skill evidence
--- (the public Proof Card detail page fetches card + skills in one query).
-create policy "anon read published card skills" on public.proof_card_skills
-for select to anon
-using (exists (
-  select 1 from public.proof_cards pc
-  where pc.id = proof_card_skills.card_id
-    and pc.visibility = 'public'
-    and pc.review_status in ('approved', 'published')
-));
-
-create policy "team editors manage card skills" on public.proof_card_skills
-for all to authenticated
-using (exists (
-  select 1 from public.proof_cards pc
-  where pc.id = proof_card_skills.card_id and public.can_edit_team_work(pc.team_id)
-))
-with check (exists (
-  select 1 from public.proof_cards pc
-  where pc.id = proof_card_skills.card_id and public.can_edit_team_work(pc.team_id)
-));
-
--- ----------------------------------------------------------------------------
--- mentors, comments, notifications, audit log
--- ----------------------------------------------------------------------------
-
-create table public.mentor_assignments (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  mentor_id uuid not null references auth.users (id) on delete cascade,
-  assigned_by uuid references auth.users (id) on delete set null,
-  active boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (team_id, mentor_id)
-);
-
-create index mentor_assignments_mentor_idx on public.mentor_assignments (mentor_id);
-
-alter table public.mentor_assignments enable row level security;
-
-create policy "authorised readers view assignments" on public.mentor_assignments
-for select to authenticated
-using (
-  mentor_id = auth.uid()
-  or public.can_read_team(team_id)
-);
-
-create policy "cohort staff assign mentors" on public.mentor_assignments
-for insert to authenticated
-with check (
-  exists (
-    select 1 from public.teams t
-    where t.id = mentor_assignments.team_id
-      and public.is_cohort_staff(t.cohort_id)
-  )
-);
-
-create policy "staff deactivate assignments" on public.mentor_assignments
-for update to authenticated
-using (assigned_by = auth.uid() or public.is_platform_admin())
-with check (assigned_by = auth.uid() or public.is_platform_admin());
-
-create table public.comments (
-  id uuid primary key default gen_random_uuid(),
-  team_id uuid not null references public.teams (id) on delete cascade,
-  author_id uuid references auth.users (id) on delete set null,
-  body text not null check (char_length(body) between 1 and 2000),
-  audience text not null default 'team' check (audience in ('team', 'reviewers')),
-  created_at timestamptz not null default now()
-);
-
-create index comments_team_idx on public.comments (team_id);
-
-alter table public.comments enable row level security;
-
-create policy "authorised readers view comments" on public.comments
-for select to authenticated
-using (
-  public.can_read_team(team_id)
-  -- audience='reviewers' comments are additionally limited: they are visible
-  -- to reviewers and comments with audience='reviewers' are only readable by
-  -- those with review rights on this team (checked via can_review_team_work).
-  and (
-    audience = 'team'
-    or public.can_review_team_work(team_id)
-  )
-);
-
-create policy "team members comment" on public.comments
-for insert to authenticated
-with check (
-  public.can_edit_team_work(team_id)
-  and author_id = auth.uid()
-);
-
-create table public.notifications (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
-  type text not null,
-  title text not null,
-  body text,
-  link text,
-  read boolean not null default false,
-  created_at timestamptz not null default now()
-);
-
-create index notifications_user_idx on public.notifications (user_id, read);
-
-alter table public.notifications enable row level security;
-
-create policy "users read own notifications" on public.notifications
-for select to authenticated
-using (user_id = auth.uid());
-
-create policy "users update own notifications" on public.notifications
-for update to authenticated
-using (user_id = auth.uid())
-with check (user_id = auth.uid());
-
--- Notifications are written by roles that legitimately report to other users:
--- admins, institution admins, faculty coordinators, facilitators, mentors and
--- problem owners. Regular students cannot insert (anti-spam boundary).
-create policy "reporter roles send notifications" on public.notifications
-for insert to authenticated
-with check (
-  public.has_any_role(array[
-    'platform_admin', 'institution_admin', 'faculty_coordinator',
-    'facilitator', 'mentor', 'problem_owner'
-  ])
-);
-
-create table public.audit_logs (
-  id uuid primary key default gen_random_uuid(),
-  actor_id uuid references auth.users (id) on delete set null,
-  action text not null,
-  entity text not null,
-  entity_id uuid,
-  details jsonb,
-  created_at timestamptz not null default now()
-);
-
-create index audit_logs_created_idx on public.audit_logs (created_at desc);
-
-alter table public.audit_logs enable row level security;
-
--- Only platform admins read the audit trail.
-create policy "platform admins read audit logs" on public.audit_logs
-for select to authenticated
-using (public.is_platform_admin());
-
--- Reporter-level roles may append entries. Regular students cannot.
-create policy "reporter roles write audit logs" on public.audit_logs
-for insert to authenticated
-with check (
-  public.has_any_role(array[
-    'platform_admin', 'institution_admin', 'faculty_coordinator',
-    'facilitator', 'mentor', 'problem_owner'
-  ])
-);
-
--- ----------------------------------------------------------------------------
--- auth.users trigger: create profile + first role on signup
--- ----------------------------------------------------------------------------
-
+-- auth.users trigger: create profile + first role on signup.
 create function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -1234,9 +1279,9 @@ create trigger on_auth_user_created
 after insert on auth.users
 for each row execute function public.handle_new_user();
 
--- ----------------------------------------------------------------------------
--- RPCs the app depends on
--- ----------------------------------------------------------------------------
+-- ============================================================================
+-- PART 5 of 5 — RPCs THE APP DEPENDS ON + GRANTS
+-- ============================================================================
 
 -- Look up a user id by email — used by staff adding cohort members or granting
 -- roles. SECURITY DEFINER because the caller must never read all of

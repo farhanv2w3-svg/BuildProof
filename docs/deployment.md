@@ -28,13 +28,18 @@ deployment on **Cloudflare Pages** with a **Supabase** backend.
 
 Supabase Dashboard → **SQL editor** → paste each file and **Run**:
 
-| Order | File | What it does |
-|---|---|---|
-| 1 | `supabase/migrations/0001_init_schema.sql` | All tables, RLS policies on every table, helper/security functions, signup trigger, review-guard triggers, RPCs |
-| 2 | `supabase/migrations/0002_storage_policies.sql` | Creates the **private** `evidence` storage bucket + object policies |
+| Order | File | Read-only? | What it does |
+|---|---|---|---|
+| 0 | `supabase/preflight_inspect.sql` | ✅ yes | Inspects the current DB state (existing objects, event triggers, extensions, storage) **before** touching anything. Confirms the failed runs really left `public` empty. |
+| 1 | `supabase/migrations/0001_init_schema.sql` | no | All tables, RLS policies on every table, helper/security functions, signup trigger, review-guard triggers, RPCs |
+| — | `supabase/verify_migrations.sql` (Section A) | ✅ yes | Confirms 0001 landed completely (23 tables, 64 policies, 15 functions, signup trigger) |
+| 2 | `supabase/migrations/0002_storage_policies.sql` | no | Creates the **private** `evidence` storage bucket + object policies |
+| — | `supabase/verify_migrations.sql` (Section B) | ✅ yes | Confirms 0002 landed (bucket + 4 object policies) |
 
 If a step errors, stop and re-check the previous step before retrying; both
-files are written to be run top-to-bottom once (the storage file is idempotent).
+migration files are written to be run top-to-bottom once (the storage file is
+idempotent). Do **not** re-run 0001 after it has partially or fully succeeded —
+re-run the preflight instead and compare against the expected results.
 
 ## 4. Configure authentication URLs
 
