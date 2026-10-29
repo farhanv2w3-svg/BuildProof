@@ -36,11 +36,14 @@ export default function HomePage() {
               self-reported claims.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <ButtonLink to="/signup" size="lg">
-                Get started <ArrowRight className="h-4 w-4" />
+              <ButtonLink to="/problems" size="lg">
+                Explore problems <ArrowRight className="h-4 w-4" />
               </ButtonLink>
-              <ButtonLink to="/how-it-works" variant="secondary" size="lg">
-                See how it works
+              <ButtonLink to="/submit-problem" variant="secondary" size="lg">
+                Submit a problem
+              </ButtonLink>
+              <ButtonLink to="/opportunities" variant="secondary" size="lg">
+                Explore opportunities
               </ButtonLink>
             </div>
             <p className="mt-4 text-[12px] text-ink-soft">
@@ -103,6 +106,42 @@ export default function HomePage() {
                 <h3 className="display-title mt-3 text-[15px]">{s.title}</h3>
                 <p className="mt-1.5 text-[13px] leading-relaxed text-ink-soft">{s.body}</p>
               </div>
+            ))}
+          </div>
+          <div className="mt-6 grid gap-3 text-[13px] text-ink-soft sm:grid-cols-3">
+            {[
+              { t: "Discover", to: "/problems", d: "Real problems from companies, individuals, small businesses and NGOs." },
+              { t: "Build with teams", to: "/how-it-works", d: "Form a team around the problem, validate, then build and test." },
+              { t: "Continue", to: "/opportunities", d: "Paid work, startup pathways, hardware funding and career opportunities." },
+            ].map((c) => (
+              <Link key={c.to} to={c.to} className="rounded-card border border-line bg-surface p-4 transition-colors hover:border-brand-400">
+                <span className="font-semibold text-ink">{c.t}</span>
+                <span className="mt-1 block text-[12.5px]">{c.d}</span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* --------------------------- Platform domains -------------------- */}
+      <section className="border-b border-line bg-surface py-16">
+        <div className="container-xl">
+          <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-brand-600">One platform, separate domains</p>
+          <h2 className="display-title mt-2 max-w-2xl text-3xl">Different projects follow different pathways.</h2>
+          <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {[
+              { to: "/company-projects", title: "Company Projects", body: "Paid, real-world work with agreed deliverables, acceptance criteria and payment milestones recorded in the app." },
+              { to: "/solutions", title: "Solutions Marketplace", body: "Work that already exists — prototypes with evidence, honest limitations and creator-held ownership." },
+              { to: "/startups-funding", title: "Startups & Funding", body: "Founder pathways, structured solution transfers and real funding programmes — never invented ones." },
+              { to: "/hardware", title: "Hardware Innovation", body: "A 12-stage engineering pathway from concept to manufacturing, with safety evidence at every step." },
+              { to: "/opportunities", title: "Opportunities", body: "Internships, entry-level roles and founding-team opportunities matched by evidence, not scores." },
+              { to: "/proof-cards", title: "Proof Cards", body: "Individual contribution and outcome records reviewed by the right people — project results and your performance stay separate." },
+            ].map((d) => (
+              <Link key={d.to} to={d.to} className="group rounded-card border border-line bg-canvas p-5 shadow-card transition-colors hover:border-brand-400">
+                <h3 className="display-title text-[16px] group-hover:text-brand-700">{d.title}</h3>
+                <p className="mt-2 text-[13px] leading-relaxed text-ink-soft">{d.body}</p>
+                <span className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold text-brand-700">Open <ArrowRight className="h-3.5 w-3.5" /></span>
+              </Link>
             ))}
           </div>
         </div>

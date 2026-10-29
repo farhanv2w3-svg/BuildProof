@@ -6,9 +6,21 @@ import { Button, ButtonLink } from "./ui";
 import { useAuth } from "../lib/auth";
 import { cn } from "../lib/utils";
 
+const exploreNav = [
+  { to: "/problems", label: "Problems" },
+  { to: "/solutions", label: "Solutions Marketplace" },
+  { to: "/company-projects", label: "Company Projects" },
+  { to: "/startups-funding", label: "Startups & Funding" },
+  { to: "/hardware", label: "Hardware Innovation" },
+  { to: "/opportunities", label: "Opportunities" },
+];
+
 const publicNav = [
   { to: "/how-it-works", label: "How it works" },
   { to: "/proof-cards", label: "Proof Cards" },
+];
+
+const audienceNav = [
   { to: "/for-students", label: "Students" },
   { to: "/for-colleges", label: "Colleges" },
   { to: "/for-problem-owners", label: "Problem owners" },
@@ -17,6 +29,7 @@ const publicNav = [
 
 export function PublicLayout() {
   const [open, setOpen] = useState(false);
+  const [exploreOpen, setExploreOpen] = useState(false);
   const { user, loading } = useAuth();
 
   const navItem = (n: { to: string; label: string }) => (
@@ -35,6 +48,40 @@ export function PublicLayout() {
     </NavLink>
   );
 
+  /* Explore dropdown: the platform domains, distinguishable without reading essays. */
+  const exploreDropdown = (
+    <div className="relative" onMouseLeave={() => setExploreOpen(false)}>
+      <button
+        className="flex items-center gap-1 rounded-md px-2.5 py-2 text-[13.5px] font-medium text-ink-soft hover:text-ink"
+        aria-expanded={exploreOpen}
+        aria-haspopup="menu"
+        aria-label="Explore platform domains"
+        onClick={() => setExploreOpen((o) => !o)}
+        onMouseEnter={() => setExploreOpen(true)}
+      >
+        Explore <ChevronDown className="h-3.5 w-3.5" />
+      </button>
+      {exploreOpen && (
+        <div
+          role="menu"
+          className="absolute left-0 top-full z-50 w-60 rounded-card border border-line bg-surface p-1.5 shadow-card"
+        >
+          {exploreNav.map((n) => (
+            <NavLink
+              key={n.to}
+              role="menuitem"
+              to={n.to}
+              onClick={() => { setExploreOpen(false); setOpen(false); }}
+              className="block rounded-md px-2.5 py-2 text-[13px] font-medium text-ink-soft hover:bg-brand-50 hover:text-brand-700"
+            >
+              {n.label}
+            </NavLink>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-40 border-b border-line bg-surface/95 backdrop-blur supports-[backdrop-filter]:bg-surface/80">
@@ -44,6 +91,8 @@ export function PublicLayout() {
           </Link>
           <nav aria-label="Main" className="hidden items-center gap-1 lg:flex">
             {publicNav.map(navItem)}
+            {exploreDropdown}
+            {audienceNav.map(navItem)}
           </nav>
           <div className="hidden items-center gap-2 lg:flex">
             {loading ? null : user ? (
@@ -78,7 +127,10 @@ export function PublicLayout() {
             className="border-t border-line bg-surface px-4 py-3 lg:hidden"
           >
             <div className="flex flex-col">
+              {exploreNav.map(navItem)}
+              <div className="my-1 border-t border-line" />
               {publicNav.map(navItem)}
+              {audienceNav.map(navItem)}
             </div>
             <div className="mt-3 flex gap-2 border-t border-line pt-3">
               {user ? (
@@ -114,7 +166,7 @@ const year = new Date().getFullYear();
 export function Footer() {
   return (
     <footer className="border-t border-line bg-surface">
-      <div className="container-xl grid gap-10 py-12 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="container-xl grid gap-10 py-12 sm:grid-cols-3 lg:grid-cols-5">
         <div>
           <Logo />
           <p className="mt-3 max-w-xs text-[13px] leading-relaxed text-ink-soft">
@@ -123,11 +175,20 @@ export function Footer() {
           </p>
         </div>
         <FooterCol
-          title="Product"
+          title="Discover"
           links={[
+            ["/problems", "Problems"],
+            ["/solutions", "Solutions Marketplace"],
+            ["/company-projects", "Company Projects"],
+            ["/hardware", "Hardware Innovation"],
+          ]}
+        />
+        <FooterCol
+          title="Grow"
+          links={[
+            ["/startups-funding", "Startups & Funding"],
+            ["/opportunities", "Opportunities"],
             ["/how-it-works", "How it works"],
-            ["/proof-cards", "Proof Cards"],
-            ["/submit-problem", "Submit a problem"],
             ["/apply", "Join BuildProof"],
           ]}
         />

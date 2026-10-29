@@ -8,6 +8,10 @@ import {
   Building2,
   Bell,
   ChevronLeft,
+  Puzzle,
+  Award,
+  Briefcase,
+  Cpu,
 } from "lucide-react";
 import { useState } from "react";
 import { Logo } from "./Logo";
@@ -50,8 +54,13 @@ export function AppLayout() {
 function AppSidebar({ roles, name }: { roles: AppRole[]; name: string }) {
   const [open, setOpen] = useState(false);
 
-  const items: { to: string; label: string; icon: typeof Compass; show: boolean }[] = [    { to: "/app", label: "Dashboard", icon: LayoutDashboard, show: true },
+  const items: { to: string; label: string; icon: typeof Compass; show: boolean }[] = [
+    { to: "/app", label: "Dashboard", icon: LayoutDashboard, show: true },
     { to: "/app/problems", label: "Problems", icon: Compass, show: true },
+    { to: "/app/my-proof", label: "My Proof", icon: Award, show: true },
+    { to: "/app/opportunities", label: "Opportunities", icon: Briefcase, show: true },
+    { to: "/app/hardware", label: "Hardware", icon: Cpu, show: true },
+    { to: "/app/organizations", label: "Organisations", icon: Puzzle, show: true },
     { to: "/app/mentor", label: "Mentoring", icon: ClipboardCheck, show: hasRoleAccess(roles, ["mentor"]) },
     { to: "/app/institution", label: "Institution", icon: Building2, show: hasRoleAccess(roles, ["institution_admin", "faculty_coordinator", "facilitator"]) },
     { to: "/app/admin", label: "Admin", icon: ShieldCheck, show: hasRoleAccess(roles, ["platform_admin"]) },

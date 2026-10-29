@@ -20,6 +20,8 @@ const tabs = [
   { to: "evidence", label: "Validation & evidence" },
   { to: "feasibility", label: "Feasibility" },
   { to: "tests", label: "Prototype & testing" },
+  { to: "plan", label: "Plan & tasks" },
+  { to: "roles", label: "Team roles" },
 ];
 
 export default function TeamLayout() {

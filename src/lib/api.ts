@@ -4,24 +4,45 @@ import type {
   Cohort,
   CohortMember,
   Comment,
+  CompanyProject,
+  ContentReport,
   EvidenceAttachment,
   FeasibilityReview,
+  FundingApplication,
+  FundingOpportunity,
+  HardwareProject,
   Institution,
   Interview,
+  JobOpportunity,
   MentorAssignment,
   Notification,
+  Organization,
+  OrganizationMember,
+  OpportunityApplication,
+  PaymentMilestone,
   Problem,
   ProblemScreening,
   Profile,
   ProofCard,
   ProofCardSkill,
+  ProofContribution,
+  ProjectMilestone,
+  ProjectTask,
   PrototypeTest,
+  ReviewAssignment,
+  ReviewRecord,
+  Solution,
+  SolutionInterest,
+  SolutionTransferAgreement,
   Team,
+  TeamApplication,
   TeamDecision,
   TeamInvite,
   TeamMember,
+  TeamRoleRequirement,
   UserRole,
   UserTest,
+  OrgRole,
 } from "../types/database";
 
 /* Every function relies on Supabase RLS for authorisation — the client never
@@ -690,6 +711,770 @@ export async function writeAuditLog(
   const s = requireSupabase();
   const { error } = await s.from("audit_logs").insert({ actor_id, action, entity, entity_id, details });
   if (error) console.warn("audit log not written:", error.message);
+}
+
+/* ==================================================================== */
+/*  0003 — platform domains (RLS enforces every rule below; the client   */
+/*  just talks to Postgres and surfaces errors)                         */
+/* ==================================================================== */
+
+/* ------------------------ organizations --------------------------- */
+
+export async function registerOrganization(
+  values: { name: string; kind: Organization["kind"]; description?: string; website_url?: string; city?: string },
+  userId: string
+): Promise<Organization> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("organizations")
+    .insert({ ...values, created_by: userId })
+    .select()
+    .single();
+  await fail(error);
+  const org = data as Organization;
+  // Registration self-membership: the org creator becomes its owner.
+  const { error: mErr } = await s
+    .from("organization_members")
+    .insert({ organization_id: org.id, user_id: userId, org_role: "owner" });
+  await fail(mErr);
+  return org;
+}
+
+export async function listMyOrganizations(userId: string): Promise<(Organization & { org_role: OrgRole })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("organization_members")
+    .select("org_role, organization:organizations(*)")
+    .eq("user_id", userId);
+  await fail(error);
+  return ((data ?? []) as unknown as { org_role: OrgRole; organization: Organization | null }[]).map(
+    (row) => ({ ...(row.organization as Organization), org_role: row.org_role })
+  );
+}
+
+export async function fetchOrganization(id: string): Promise<Organization | null> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("organizations").select("*").eq("id", id).maybeSingle();
+  await fail(error);
+  return (data as Organization) ?? null;
+}
+
+/** Every organisation (organisations are publicly readable; the admin verification queue uses this). */
+export async function listAllOrganizations(): Promise<Organization[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("organizations")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(100);
+  await fail(error);
+  return (data ?? []) as Organization[];
+}
+
+export async function fetchOrganizationRoster(orgId: string): Promise<(OrganizationMember & { profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("organization_members")
+    .select("*, profile:profiles(*)")
+    .eq("organization_id", orgId)
+    .order("created_at");
+  await fail(error);
+  return (data ?? []) as (OrganizationMember & { profile: Profile | null })[];
+}
+
+/** Platform admin action (RLS enforces it — org staff cannot verify themselves). */
+export async function setOrganizationVerification(id: string, status: Organization["verification_status"]): Promise<void> {
+  const s = requireSupabase();
+  const patch: Record<string, unknown> = { verification_status: status };
+  const { error } = await s.from("organizations").update(patch).eq("id", id);
+  await fail(error);
+}
+
+/** Org staff may add plain members; owner/representative rows remain an admin grant. */
+export async function addOrganizationMember(orgId: string, userId: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s
+    .from("organization_members")
+    .insert({ organization_id: orgId, user_id: userId, org_role: "member" });
+  await fail(error);
+}
+
+export async function removeOrganizationMember(id: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("organization_members").delete().eq("id", id);
+  await fail(error);
+}
+
+/* ------------------- team roles & applications -------------------- */
+
+export async function listRoleRequirements(teamId: string): Promise<TeamRoleRequirement[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("team_role_requirements")
+    .select("*")
+    .eq("team_id", teamId)
+    .order("created_at");
+  await fail(error);
+  return (data ?? []) as TeamRoleRequirement[];
+}
+
+/** Replace-all under one call; team editors manage seat counts explicitly. */
+export async function setRoleRequirements(
+  teamId: string,
+  rows: { skill: string; seats: number; note?: string }[]
+): Promise<void> {
+  const s = requireSupabase();
+  const del = await s.from("team_role_requirements").delete().eq("team_id", teamId);
+  await fail(del.error);
+  if (rows.length === 0) return;
+  const ins = await s
+    .from("team_role_requirements")
+    .insert(rows.map((r) => ({ team_id: teamId, skill: r.skill, seats: r.seats, note: r.note ?? null, filled_seats: 0 })));
+  await fail(ins.error);
+}
+
+export async function applyToTeam(
+  teamId: string,
+  userId: string,
+  roleNeeded: string | null,
+  message: string | null
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s
+    .from("team_applications")
+    .insert({ team_id: teamId, user_id: userId, role_needed: roleNeeded, message: message });
+  await fail(error);
+}
+
+export async function listTeamApplications(teamId: string): Promise<(TeamApplication & { profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("team_applications")
+    .select("*, profile:profiles(*)")
+    .eq("team_id", teamId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as (TeamApplication & { profile: Profile | null })[];
+}
+
+export async function decideTeamApplication(
+  id: string,
+  status: TeamApplication["status"],
+  decidedBy: string
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s
+    .from("team_applications")
+    .update({ status, decided_by: decidedBy })
+    .eq("id", id);
+  await fail(error);
+}
+
+/* --------------------- milestones & tasks ------------------------- */
+
+export async function listMilestones(teamId: string): Promise<ProjectMilestone[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("project_milestones")
+    .select("*")
+    .eq("team_id", teamId)
+    .order("due_date", { ascending: true, nullsFirst: false });
+  await fail(error);
+  return (data ?? []) as ProjectMilestone[];
+}
+
+export async function createMilestone(values: {
+  team_id: string;
+  title: string;
+  due_date?: string | null;
+  deliverable_note?: string | null;
+}): Promise<ProjectMilestone> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("project_milestones").insert(values).select().single();
+  await fail(error);
+  return data as ProjectMilestone;
+}
+
+export async function updateMilestone(id: string, patch: Partial<ProjectMilestone>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("project_milestones").update(patch).eq("id", id);
+  await fail(error);
+}
+
+export async function deleteMilestone(id: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("project_milestones").delete().eq("id", id);
+  await fail(error);
+}
+
+export async function listTasks(teamId: string): Promise<(ProjectTask & { assignee_profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("project_tasks")
+    .select("*, assignee_profile:assignee(id, full_name, email)")
+    .eq("team_id", teamId)
+    .order("created_at", { ascending: true });
+  await fail(error);
+  return (data ?? []) as (ProjectTask & { assignee_profile: Profile | null })[];
+}
+
+export async function createTask(values: {
+  team_id: string;
+  title: string;
+  milestone_id?: string | null;
+  assignee?: string | null;
+  notes?: string | null;
+}): Promise<ProjectTask> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("project_tasks").insert(values).select().single();
+  await fail(error);
+  return data as ProjectTask;
+}
+
+/** Assignee may progress their own task; editors manage anything (RLS). */
+export async function updateTask(id: string, patch: Partial<ProjectTask>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("project_tasks").update(patch).eq("id", id);
+  await fail(error);
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("project_tasks").delete().eq("id", id);
+  await fail(error);
+}
+
+/* ----------------------- company projects ------------------------- */
+
+export async function listCompanyProjects(): Promise<CompanyProject[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("company_projects")
+    .select("*, organization:organizations(name, kind, verification_status)")
+    .neq("status", "draft")
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as CompanyProject[];
+}
+
+export async function listOrgCompanyProjects(orgId: string): Promise<CompanyProject[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("company_projects")
+    .select("*")
+    .eq("organization_id", orgId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as CompanyProject[];
+}
+
+export async function createCompanyProject(values: Omit<CompanyProject, "id" | "created_at">): Promise<CompanyProject> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("company_projects").insert(values).select().single();
+  await fail(error);
+  return data as CompanyProject;
+}
+
+/** RLS: organisation staff only; drafts stay hidden until listed. */
+export async function updateCompanyProject(id: string, patch: Partial<CompanyProject>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("company_projects").update(patch).eq("id", id);
+  await fail(error);
+}
+
+/* ---------------------- payment milestones ------------------------ */
+
+export async function listPaymentMilestones(projectId: string): Promise<PaymentMilestone[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("payment_milestones")
+    .select("*")
+    .eq("company_project_id", projectId)
+    .order("due_date", { ascending: true, nullsFirst: false });
+  await fail(error);
+  return (data ?? []) as PaymentMilestone[];
+}
+
+export async function createPaymentMilestone(values: {
+  company_project_id: string;
+  title: string;
+  amount_cents: number;
+  due_date?: string | null;
+  currency?: string;
+}): Promise<PaymentMilestone> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("payment_milestones").insert(values).select().single();
+  await fail(error);
+  return data as PaymentMilestone;
+}
+
+/**
+ * Records a payment status change. The guard trigger rejects unauthorised
+ * `paid` transitions — organisations cannot mark payments paid without the
+ * ownership chain, and students can never mark their own payment paid.
+ */
+export async function updatePaymentMilestone(
+  id: string,
+  patch: Partial<Pick<PaymentMilestone, "status" | "paid_reference" | "due_date" | "title">>
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("payment_milestones").update(patch).eq("id", id);
+  await fail(error);
+}
+
+/* --------------------------- solutions ---------------------------- */
+
+export async function listSolutions(): Promise<Solution[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("solutions")
+    .select("*, team:teams(name)")
+    .eq("exposure", "listed")
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as Solution[];
+}
+
+/** Team workspace view: every solution the team's permission chain can see. */
+export async function listTeamSolutions(teamId: string): Promise<Solution[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("solutions")
+    .select("*")
+    .eq("team_id", teamId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as Solution[];
+}
+
+export async function createSolution(
+  values: Omit<Solution, "id" | "created_at"> & { created_by: string }
+): Promise<Solution> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("solutions").insert(values).select().single();
+  await fail(error);
+  return data as Solution;
+}
+
+export async function updateSolution(id: string, patch: Partial<Solution>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("solutions").update(patch).eq("id", id);
+  await fail(error);
+}
+
+export async function expressSolutionInterest(
+  solutionId: string,
+  userId: string,
+  interestType: SolutionInterest["interest_type"],
+  message: string | null
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s
+    .from("solution_interests")
+    .upsert(
+      { solution_id: solutionId, user_id: userId, interest_type: interestType, message, status: "new" },
+      { onConflict: "solution_id,user_id,interest_type" }
+    );
+  await fail(error);
+}
+
+export async function listSolutionInterests(solutionId: string): Promise<(SolutionInterest & { profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("solution_interests")
+    .select("*, profile:profiles(*)")
+    .eq("solution_id", solutionId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as (SolutionInterest & { profile: Profile | null })[];
+}
+
+export async function updateInterestStatus(id: string, status: SolutionInterest["status"]): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("solution_interests").update({ status }).eq("id", id);
+  await fail(error);
+}
+
+export async function listTransferAgreements(solutionId: string): Promise<SolutionTransferAgreement[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("solution_transfer_agreements")
+    .select("*")
+    .eq("solution_id", solutionId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as SolutionTransferAgreement[];
+}
+
+export async function proposeTransferAgreement(
+  values: Omit<SolutionTransferAgreement, "id" | "created_at" | "executed_at">
+): Promise<SolutionTransferAgreement> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("solution_transfer_agreements").insert(values).select().single();
+  await fail(error);
+  return data as SolutionTransferAgreement;
+}
+
+export async function updateTransferAgreement(
+  id: string,
+  patch: Partial<Pick<SolutionTransferAgreement, "status" | "agreed_by_creator" | "agreed_by_other" | "terms" | "compensation_note" | "creator_rights_note" | "attribution_keeping">>
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("solution_transfer_agreements").update(patch).eq("id", id);
+  await fail(error);
+}
+
+/* ----------------------------- funding ---------------------------- */
+
+export async function listFundingOpportunities(): Promise<FundingOpportunity[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("funding_opportunities")
+    .select("*, organization:organizations(name, verification_status)")
+    .neq("status", "closed")
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as FundingOpportunity[];
+}
+
+export async function createFundingOpportunity(
+  values: Omit<FundingOpportunity, "id" | "created_at" | "verification_status">
+): Promise<FundingOpportunity> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("funding_opportunities").insert(values).select().single();
+  await fail(error);
+  return data as FundingOpportunity;
+}
+
+export async function updateFundingOpportunity(id: string, patch: Partial<FundingOpportunity>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("funding_opportunities").update(patch).eq("id", id);
+  await fail(error);
+}
+
+export async function applyForFunding(values: {
+  opportunity_id: string;
+  applicant: string;
+  applicant_team?: string | null;
+  pitch: string;
+  requested_amount?: number | null;
+}): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("funding_applications").insert(values);
+  await fail(error);
+}
+
+export async function listFundingApplications(opportunityId: string): Promise<(FundingApplication & { profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("funding_applications")
+    .select("*, profile:profiles(*)")
+    .eq("opportunity_id", opportunityId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as (FundingApplication & { profile: Profile | null })[];
+}
+
+/** Funder-side decision; applicants can never self-approve (RLS + policy). */
+export async function decideFundingApplication(
+  id: string,
+  status: FundingApplication["status"]
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("funding_applications").update({ status }).eq("id", id);
+  await fail(error);
+}
+
+/* ----------------------------- hardware --------------------------- */
+
+export async function listMyHardware(teamIds: string[]): Promise<HardwareProject[]> {
+  if (teamIds.length === 0) return [];
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("hardware_projects")
+    .select("*")
+    .in("team_id", teamIds)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as HardwareProject[];
+}
+
+export async function createHardwareProject(
+  values: Omit<HardwareProject, "id" | "created_at"> & { created_by: string }
+): Promise<HardwareProject> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("hardware_projects").insert(values).select().single();
+  await fail(error);
+  return data as HardwareProject;
+}
+
+export async function updateHardwareProject(id: string, patch: Partial<HardwareProject>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("hardware_projects").update(patch).eq("id", id);
+  await fail(error);
+}
+
+/* ---------------------------- opportunities ------------------------ */
+
+export async function listOpportunities(): Promise<JobOpportunity[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("job_opportunities")
+    .select("*, organization:organizations(name, verification_status)")
+    .neq("status", "closed")
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as JobOpportunity[];
+}
+
+export async function createOpportunity(
+  values: Omit<JobOpportunity, "id" | "created_at" | "verification_status">
+): Promise<JobOpportunity> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("job_opportunities").insert(values).select().single();
+  await fail(error);
+  return data as JobOpportunity;
+}
+
+export async function updateOpportunity(id: string, patch: Partial<JobOpportunity>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("job_opportunities").update(patch).eq("id", id);
+  await fail(error);
+}
+
+export async function applyToOpportunity(values: {
+  opportunity_id: string;
+  user_id: string;
+  evidence_note?: string | null;
+  proof_card_id?: string | null;
+}): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("opportunity_applications").insert(values);
+  await fail(error);
+}
+
+export async function listOpportunityApplications(
+  opportunityId: string
+): Promise<(OpportunityApplication & { profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("opportunity_applications")
+    .select("*, profile:profiles(*)")
+    .eq("opportunity_id", opportunityId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as (OpportunityApplication & { profile: Profile | null })[];
+}
+
+export async function decideOpportunityApplication(
+  id: string,
+  status: OpportunityApplication["status"]
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("opportunity_applications").update({ status }).eq("id", id);
+  await fail(error);
+}
+
+/** Applicants may only withdraw before review (RLS restricts to 'submitted'). */
+export async function withdrawOpportunityApplication(id: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("opportunity_applications").delete().eq("id", id);
+  await fail(error);
+}
+
+export async function listMyOpportunityApplications(userId: string): Promise<(OpportunityApplication & { opportunity: JobOpportunity | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("opportunity_applications")
+    .select("*, opportunity:job_opportunities(*)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as (OpportunityApplication & { opportunity: JobOpportunity | null })[];
+}
+
+/** Hiring-side view: all applications to one organisation's opportunities. */
+export async function listOrgOpportunityApplications(
+  orgId: string
+): Promise<(OpportunityApplication & { opportunity: JobOpportunity | null; profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data: jobs, error: jobErr } = await s
+    .from("job_opportunities")
+    .select("id")
+    .eq("organization_id", orgId);
+  await fail(jobErr);
+  const ids = ((jobs ?? []) as { id: string }[]).map((j) => j.id);
+  if (ids.length === 0) return [];
+  const { data, error } = await s
+    .from("opportunity_applications")
+    .select("*, opportunity:job_opportunities(*), profile:profiles(*)")
+    .in("opportunity_id", ids)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as (OpportunityApplication & { opportunity: JobOpportunity | null; profile: Profile | null })[];
+}
+
+/* ------------------------- structured reviews --------------------- */
+
+export async function assignReviewer(values: {
+  subject_type: ReviewAssignment["subject_type"];
+  subject_id: string;
+  reviewer_type: ReviewAssignment["reviewer_type"];
+  reviewer_id: string;
+  assigned_by: string;
+  due_date?: string | null;
+}): Promise<ReviewAssignment> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("review_assignments").insert(values).select().single();
+  await fail(error);
+  return data as ReviewAssignment;
+}
+
+export async function listReviewAssignments(
+  subjectType: ReviewAssignment["subject_type"],
+  subjectId: string
+): Promise<ReviewAssignment[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("review_assignments")
+    .select("*")
+    .eq("subject_type", subjectType)
+    .eq("subject_id", subjectId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as ReviewAssignment[];
+}
+
+export async function listMyReviewAssignments(userId: string): Promise<ReviewAssignment[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("review_assignments")
+    .select("*")
+    .eq("reviewer_id", userId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as ReviewAssignment[];
+}
+
+export async function updateReviewAssignment(id: string, patch: Partial<ReviewAssignment>): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("review_assignments").update(patch).eq("id", id);
+  await fail(error);
+}
+
+export async function submitReviewRecord(values: {
+  assignment_id: string;
+  dimensions: ReviewRecord["dimensions"];
+  verdict: ReviewRecord["verdict"];
+  feedback: string;
+}): Promise<ReviewRecord> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("review_records").insert(values).select().single();
+  await fail(error);
+  return data as ReviewRecord;
+}
+
+export async function listReviewRecords(assignmentIds: string[]): Promise<ReviewRecord[]> {
+  if (assignmentIds.length === 0) return [];
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("review_records")
+    .select("*")
+    .in("assignment_id", assignmentIds)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as ReviewRecord[];
+}
+
+/** Platform-admin-only flag flip; the guard trigger authorises it server-side. */
+export async function setReviewRecordVerification(id: string, verified: boolean): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("review_records").update({ verified }).eq("id", id);
+  await fail(error);
+}
+
+/** Admin integrity queue — RLS lets a platform admin read every assignment. */
+export async function listAllReviewAssignments(): Promise<(ReviewAssignment & { record: ReviewRecord | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("review_assignments")
+    .select("*, record:review_records(*)")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  await fail(error);
+  return ((data ?? []) as unknown as (ReviewAssignment & { record: ReviewRecord[] | null })[]).map((row) => ({
+    ...row,
+    record: row.record && row.record.length > 0 ? row.record[0] ?? null : null,
+  }));
+}
+
+/* ----------------------- proof contributions ---------------------- */
+
+export async function listContributions(cardId: string): Promise<ProofContribution[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("proof_contributions")
+    .select("*")
+    .eq("card_id", cardId)
+    .order("created_at");
+  await fail(error);
+  return (data ?? []) as ProofContribution[];
+}
+
+export async function addContribution(values: {
+  card_id: string;
+  user_id: string;
+  contribution: string;
+  deliverable_links?: string[];
+  outcome_note?: string | null;
+  paid?: boolean;
+  kind?: ProofContribution["kind"];
+}): Promise<ProofContribution> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("proof_contributions").insert(values).select().single();
+  await fail(error);
+  return data as ProofContribution;
+}
+
+export async function deleteContribution(id: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("proof_contributions").delete().eq("id", id);
+  await fail(error);
+}
+
+/* --------------------------- content reports ---------------------- */
+
+export async function reportContent(values: {
+  reporter: string;
+  subject_type: ContentReport["subject_type"];
+  subject_id: string;
+  reason: ContentReport["reason"];
+  detail?: string | null;
+}): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("content_reports").insert(values);
+  await fail(error);
+}
+
+export async function listOpenReports(): Promise<(ContentReport & { profile: Profile | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("content_reports")
+    .select("*, profile:profiles(*)")
+    .in("status", ["open", "reviewed"])
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as (ContentReport & { profile: Profile | null })[];
+}
+
+export async function updateReportStatus(
+  id: string,
+  status: ContentReport["status"],
+  handledBy: string
+): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("content_reports").update({ status, handled_by: handledBy }).eq("id", id);
+  await fail(error);
 }
 
 /* ---------------------------- storage ------------------------------ */

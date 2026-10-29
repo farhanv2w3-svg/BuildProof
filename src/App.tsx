@@ -39,6 +39,21 @@ import { InviteAcceptPage } from "./features/teams/TeamLayout";
 import MentorPage from "./features/mentor/MentorPage";
 import AdminPage from "./features/admin/AdminPage";
 
+/* 0003 — platform domains */
+import PublicProblemsPage from "./pages/PublicProblemsPage";
+import PublicSolutionsPage from "./pages/PublicSolutionsPage";
+import PublicCompanyProjectsPage from "./pages/PublicCompanyProjectsPage";
+import PublicStartupsPage from "./pages/PublicStartupsPage";
+import PublicHardwarePage from "./pages/PublicHardwarePage";
+import PublicOpportunitiesPage from "./pages/PublicOpportunitiesPage";
+import MyProofPage from "./features/proof/MyProofPage";
+import TeamPlanPage from "./features/teams/TeamPlanPage";
+import TeamRolesPage from "./features/teams/TeamRolesPage";
+import TeamSolutionsPage from "./features/proof/TeamSolutionsPage";
+import OrgWorkspacePage from "./features/orgs/OrgWorkspacePage";
+import MyHardwarePage from "./features/hardware/MyHardwarePage";
+import MyOpportunitiesPage from "./features/opportunities/MyOpportunitiesPage";
+
 export default function App() {
   return (
     <>
@@ -56,6 +71,13 @@ export default function App() {
           <Route path="/for-mentors" element={<ForMentorsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
+          {/* 0003 domains */}
+          <Route path="/problems" element={<PublicProblemsPage />} />
+          <Route path="/solutions" element={<PublicSolutionsPage />} />
+          <Route path="/company-projects" element={<PublicCompanyProjectsPage />} />
+          <Route path="/startups-funding" element={<PublicStartupsPage />} />
+          <Route path="/hardware" element={<PublicHardwarePage />} />
+          <Route path="/opportunities" element={<PublicOpportunitiesPage />} />
         </Route>
 
         {/* Auth pages (standalone, focused layout) */}
@@ -85,9 +107,18 @@ export default function App() {
             <Route path="evidence" element={<EvidencePage />} />
             <Route path="feasibility" element={<FeasibilityPage />} />
             <Route path="tests" element={<TestsPage />} />
+            <Route path="plan" element={<TeamPlanPage />} />
+            <Route path="roles" element={<TeamRolesPage />} />
+            <Route path="solutions" element={<TeamSolutionsPage />} />
           </Route>
           <Route path="proof-cards/:proofCardId" element={<ProofCardDetailPage />} />
           <Route path="invites/:token" element={<InviteAcceptPage />} />
+
+          {/* 0003 domains (authenticated; permissions enforced by RLS) */}
+          <Route path="my-proof" element={<MyProofPage />} />
+          <Route path="organizations" element={<OrgWorkspacePage />} />
+          <Route path="hardware" element={<MyHardwarePage />} />
+          <Route path="opportunities" element={<MyOpportunitiesPage />} />
 
           <Route
             path="mentor"

@@ -122,16 +122,18 @@ export function Field({
   error,
   hint,
   required,
+  className,
   children,
 }: {
   label: string;
   error?: string;
   hint?: string;
   required?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className={cn("flex flex-col gap-1.5", className)}>
       <label className="text-[13px] font-semibold text-ink">
         {label}
         {required && <span className="text-danger ml-0.5">*</span>}

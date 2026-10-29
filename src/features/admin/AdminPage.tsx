@@ -28,6 +28,7 @@ import {
 import { useAuth } from "../../lib/auth";
 import { StatusBadge } from "../problems/ProblemsPage";
 import { titleize } from "../../lib/utils";
+import { OrganizationVerificationPanel, ContentReportsPanel, ReviewVerificationPanel } from "./DomainsAdminPanels";
 import type { AppRole, ProofCard, Problem } from "../../types/database";
 
 const GRANTABLE: AppRole[] = [
@@ -52,8 +53,11 @@ export default function AdminPage() {
       />
       {err && <ErrorBanner message={err} />}
       <div className="space-y-6">
+        <OrganizationVerificationPanel />
         <ProblemScreeningPanel />
         <ProofCardAdminPanel />
+        <ReviewVerificationPanel />
+        <ContentReportsPanel />
         <RolesPanel currentUserId={user?.id ?? ""} />
         <InstitutionsPanel />
         <AuditLogPanel />
