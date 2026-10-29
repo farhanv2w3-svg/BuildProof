@@ -12,6 +12,7 @@ import {
   Award,
   Briefcase,
   Cpu,
+  CalendarDays,
 } from "lucide-react";
 import { useState } from "react";
 import { Logo } from "./Logo";
@@ -57,6 +58,7 @@ function AppSidebar({ roles, name }: { roles: AppRole[]; name: string }) {
   const items: { to: string; label: string; icon: typeof Compass; show: boolean }[] = [
     { to: "/app", label: "Dashboard", icon: LayoutDashboard, show: true },
     { to: "/app/problems", label: "Problems", icon: Compass, show: true },
+    { to: "/app/events", label: "Events", icon: CalendarDays, show: true },
     { to: "/app/my-proof", label: "My Proof", icon: Award, show: true },
     { to: "/app/opportunities", label: "Opportunities", icon: Briefcase, show: true },
     { to: "/app/hardware", label: "Hardware", icon: Cpu, show: true },

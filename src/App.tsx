@@ -54,6 +54,12 @@ import OrgWorkspacePage from "./features/orgs/OrgWorkspacePage";
 import MyHardwarePage from "./features/hardware/MyHardwarePage";
 import MyOpportunitiesPage from "./features/opportunities/MyOpportunitiesPage";
 
+/* 0004 — college events */
+import EventsPage from "./features/events/EventsPage";
+import EventDetailPage from "./features/events/EventDetailPage";
+import EventEditorPage from "./features/events/EventEditorPage";
+import MyEventsPage from "./features/events/MyEventsPage";
+
 export default function App() {
   return (
     <>
@@ -119,6 +125,13 @@ export default function App() {
           <Route path="organizations" element={<OrgWorkspacePage />} />
           <Route path="hardware" element={<MyHardwarePage />} />
           <Route path="opportunities" element={<MyOpportunitiesPage />} />
+
+          {/* 0004 college events */}
+          <Route path="events" element={<EventsPage />} />
+          <Route path="events/create" element={<EventEditorPage />} />
+          <Route path="events/:eventId" element={<EventDetailPage />} />
+          <Route path="my-events" element={<MyEventsPage />} />
+          <Route path="my-events/:eventId/edit" element={<EventEditorPage />} />
 
           <Route
             path="mentor"

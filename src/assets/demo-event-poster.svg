@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1130" viewBox="0 0 800 1130" role="img" aria-label="Demo event poster: BuildProof Demo — Inter-College Innovation Hackathon, Example Institute of Technology (Demo), Chennai, Tamil Nadu, 12–13 February 2027. DEMO EVENT — NOT A REAL ANNOUNCEMENT.">
+  <!--
+    BuildProof demo poster. Bundled fictional asset (never uploaded to storage,
+    never written to the database). Rendered only for the labelled demo event;
+    SVG shown via <img> cannot execute scripts. Remove by deleting the demo
+    event wiring in src/lib/eventsDemo.ts — see that file for instructions.
+  -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#14433c"/>
+      <stop offset="1" stop-color="#0a201d"/>
+    </linearGradient>
+    <linearGradient id="accentBand" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#21836d"/>
+      <stop offset="1" stop-color="#3f9d85"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="1130" fill="url(#bg)"/>
+
+  <!-- subtle abstract circuit/energy shapes -->
+  <circle cx="690" cy="180" r="150" fill="#1a6b58" opacity="0.35"/>
+  <circle cx="90" cy="980" r="170" fill="#175648" opacity="0.45"/>
+  <path d="M600 1000 l90 -60 30 70 -70 45 z" fill="#21836d" opacity="0.25"/>
+  <path d="M60 160 l60 -35 25 45 -60 35 z" fill="#3f9d85" opacity="0.2"/>
+  <g stroke="#3f9d85" stroke-width="2" opacity="0.3" fill="none">
+    <path d="M620 760 h70 l20 20 v55 h-50"/>
+    <circle cx="620" cy="760" r="4" fill="#3f9d85"/>
+    <circle cx="660" cy="835" r="4" fill="#3f9d85"/>
+    <path d="M110 240 h-60 v60"/>
+    <circle cx="110" cy="240" r="4" fill="#3f9d85"/>
+    <circle cx="50" cy="300" r="4" fill="#3f9d85"/>
+  </g>
+
+  <!-- top demo banner -->
+  <rect x="0" y="0" width="800" height="58" fill="#d99033"/>
+  <text x="400" y="37" text-anchor="middle" font-family="Arial, 'Segoe UI', sans-serif" font-size="24" font-weight="bold" fill="#ffffff" letter-spacing="2">DEMO EVENT — NOT A REAL ANNOUNCEMENT</text>
+
+  <!-- organiser line -->
+  <text x="400" y="130" text-anchor="middle" font-family="Arial, 'Segoe UI', sans-serif" font-size="17" font-weight="bold" fill="#7dc0ad" letter-spacing="4">BUILDPROOF · DEMO EVENT</text>
+
+  <!-- title -->
+  <text x="400" y="205" text-anchor="middle" font-family="Arial, 'Segoe UI', sans-serif" font-size="20" fill="#b5dcd0">Inter-College</text>
+  <text x="400" y="268" text-anchor="middle" font-family="Arial, 'Segoe UI', sans-serif" font-size="52" font-weight="bold" fill="#ffffff">Innovation</text>
+  <text x="400" y="330" text-anchor="middle" font-family="Arial, 'Segoe UI', sans-serif" font-size="52" font-weight="bold" fill="#3f9d85">Hackathon</text>
+
+  <!-- accent divider -->
+  <rect x="290" y="362" width="220" height="6" rx="3" fill="url(#accentBand)"/>
+
+  <!-- dates block -->
+  <g font-family="Arial, 'Segoe UI', sans-serif" fill="#ffffff">
+    <text x="400" y="432" text-anchor="middle" font-size="17" fill="#b5dcd0">12 – 13 FEBRUARY 2027</text>
+    <text x="400" y="466" text-anchor="middle" font-size="30" font-weight="bold" fill="url(#accentBand)">2 DAYS</text>
+  </g>
+
+  <!-- illustration: two people collaborating at a laptop (simple, restrained) -->
+  <g transform="translate(400 640)">
+    <circle cx="-96" cy="118" r="30" fill="#d99033"/>
+    <path d="M-150 210 q54 -50 108 0 l-8 34 h-92 z" fill="#d99033"/>
+    <circle cx="96" cy="118" r="30" fill="#3f9d85"/>
+    <path d="M42 210 q54 -50 108 0 l-8 34 h-92 z" fill="#3f9d85"/>
+    <rect x="-70" y="140" width="140" height="16" rx="6" fill="#e8f2ee"/>
+    <path d="M-70 156 l-18 40 h176 l-18 -40 z" fill="#b5dcd0"/>
+    <circle cx="-40" cy="186" r="4" fill="#14433c"/>
+    <circle cx="40" cy="186" r="4" fill="#14433c"/>
+  </g>
+
+  <!-- details bowl -->
+  <rect x="110" y="812" width="580" height="212" rx="18" fill="#14433c" stroke="#21836d" stroke-width="2"/>
+  <g font-family="Arial, 'Segoe UI', sans-serif">
+    <text x="400" y="862" text-anchor="middle" font-size="22" font-weight="bold" fill="#ffffff">Example Institute of Technology (Demo)</text>
+    <text x="400" y="894" text-anchor="middle" font-size="17" fill="#b5dcd0">Chennai · Tamil Nadu</text>
+    <text x="400" y="930" text-anchor="middle" font-size="15" fill="#7dc0ad">Venue: Example campus auditorium (Demo)</text>
+    <text x="400" y="964" text-anchor="middle" font-size="15" fill="#e8f2ee">A fictional student hackathon about solving practical community,</text>
+    <text x="400" y="986" text-anchor="middle" font-size="15" fill="#e8f2ee">business and technology problems — in teams, over one weekend.</text>
+    <text x="400" y="1012" text-anchor="middle" font-size="13" fill="#7dc0ad">Contact number intentionally blank — this field is optional.</text>
+  </g>
+
+  <!-- bottom demo banner (repeat, so the label survives cropping) -->
+  <rect x="0" y="1072" width="800" height="58" fill="#d99033"/>
+  <text x="400" y="1109" text-anchor="middle" font-family="Arial, 'Segoe UI', sans-serif" font-size="24" font-weight="bold" fill="#ffffff" letter-spacing="2">DEMO EVENT — NOT A REAL ANNOUNCEMENT</text>
+</svg>

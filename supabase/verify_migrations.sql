@@ -101,3 +101,56 @@ from pg_policies
 where schemaname = 'storage'
   and policyname like '%evidence%'
 order by policyname;
+
+-- ===========================================================================
+-- SECTION C — after 0004_events.sql (College Events)
+-- ===========================================================================
+
+-- C1. public.events must exist with RLS enabled — EXPECT 1 row, rls = true
+select c.relname as table_name, c.relrowsecurity as rls_enabled
+from pg_class c
+join pg_namespace n on n.oid = c.relnamespace
+where n.nspname = 'public' and c.relname = 'events';
+
+-- C2. Events policies — EXPECT 5 rows
+select policyname, cmd, roles
+from pg_policies
+where schemaname = 'public' and tablename = 'events'
+order by policyname;
+
+-- C3. Total public policies — EXPECT 69 (was 64; +5 for events)
+select count(*) as policy_count, 69 as expected
+from pg_policies
+where schemaname = 'public';
+
+-- C4. The dedicated PUBLIC poster bucket — EXPECT 1 row:
+--     public = true, file_size_limit = 5242880 (5 MiB), mime list jpeg/png/webp.
+--     The private "evidence" bucket must still show public = false (Section B1).
+select id, name, public, file_size_limit, allowed_mime_types
+from storage.buckets
+where id = 'event_posters';
+
+-- C5. Storage object policies — EXPECT 8 rows now
+--     (4 from 0002 "evidence…" + 4 from 0004 "event posters…/organizers…")
+select policyname, cmd, roles
+from pg_policies
+where schemaname = 'storage' and tablename = 'objects'
+order by policyname;
+
+-- C6. events table triggers — EXPECT 1 row: events_updated_at → moddatetime
+select c.relname as table_name, t.tgname as trigger_name, p.proname as fires_function
+from pg_trigger t
+join pg_class c on c.oid = t.tgrelid
+join pg_namespace n on n.oid = c.relnamespace
+join pg_proc p on p.oid = t.tgfoid
+where not t.tgisinternal and n.nspname = 'public' and c.relname = 'events';
+
+-- C7. Custom check constraints landed on events — EXPECT break Enforcement row:
+--     events_dates_order (end_date >= start_date) and the poster-path + numeric
+--     checks can be listed via:
+select conname
+from pg_constraint c
+join pg_class t on t.oid = c.conrelid
+join pg_namespace n on n.oid = t.relnamespace
+where n.nspname = 'public' and t.relname = 'events' and c.contype = 'c'
+order by conname;

@@ -35,6 +35,8 @@ Supabase Dashboard → **SQL editor** → paste each file and **Run**:
 | — | `supabase/verify_migrations.sql` (Section A) | ✅ yes | Confirms 0001 landed completely (23 tables, 64 policies, 15 functions, signup trigger) |
 | 2 | `supabase/migrations/0002_storage_policies.sql` | no | Creates the **private** `evidence` storage bucket + object policies |
 | — | `supabase/verify_migrations.sql` (Section B) | ✅ yes | Confirms 0002 landed (bucket + 4 object policies) |
+| 3 | `supabase/migrations/0004_events.sql` | no | College Events: `public.events` table + RLS, and the **public** `event_posters` storage bucket (5 MiB max, JPEG/PNG/WebP only) with folder-scoped object policies |
+| — | `supabase/verify_migrations.sql` (Sections B+C) | ✅ yes | Confirms 0004 landed: 5 events policies, 4 event-poster storage policies, bucket limit 5242880. Verify the `evidence` bucket row still shows `public = false` |
 
 If a step errors, stop and re-check the previous step before retrying; both
 migration files are written to be run top-to-bottom once (the storage file is

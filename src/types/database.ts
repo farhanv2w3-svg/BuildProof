@@ -688,3 +688,43 @@ export interface ContentReport {
   handled_by: string | null;
   created_at: string;
 }
+
+/* ------------------------------------------------------------------ */
+/*  0004 — college events                                              */
+/* ------------------------------------------------------------------ */
+
+export type EventType =
+  | "hackathon"
+  | "symposium"
+  | "workshop"
+  | "technical_fest"
+  | "cultural_fest"
+  | "coding_competition"
+  | "robotics_hardware"
+  | "project_exhibition"
+  | "conference"
+  | "other";
+
+export type EventStatus = "draft" | "published" | "cancelled";
+
+export interface EventRow {
+  id: string;
+  created_by: string;
+  title: string;
+  event_type: EventType;
+  institution_name: string;
+  city: string;
+  state_name: string;
+  start_date: string;
+  end_date: string;
+  poster_path: string;
+  contact_number: string | null;
+  venue: string | null;
+  description: string | null;
+  registration_url: string | null;
+  contact_name: string | null;
+  schedule_note: string | null;
+  status: EventStatus;
+  created_at: string;
+  updated_at: string;
+}

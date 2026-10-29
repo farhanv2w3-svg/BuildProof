@@ -43,6 +43,8 @@ import type {
   UserRole,
   UserTest,
   OrgRole,
+  EventRow,
+  EventStatus,
 } from "../types/database";
 
 /* Every function relies on Supabase RLS for authorisation — the client never
@@ -1535,6 +1537,155 @@ export async function deleteEvidence(filePath: string, id: string): Promise<void
   if (error) console.warn("storage delete failed:", error.message);
   const recErr = await s.from("evidence_attachments").delete().eq("id", id);
   await fail(recErr.error);
+}
+
+/* ==================================================================== */
+/*  0004 — college events. RLS + storage policies enforce every rule;   */
+/*  the client never sends created_by on update and never invents ids.  */
+/* ==================================================================== */
+
+/** Dedicated PUBLIC bucket for published event posters (see 0004_events.sql).
+ * Server-enforced: 5 MiB max, JPEG/PNG/WebP only. Nothing confidential
+ * belongs in this bucket. The private "evidence" bucket is untouched. */
+export const EVENT_POSTERS_BUCKET = "event_posters";
+
+/** Uploads a poster into the creator's own first path segment, mirroring the
+ * evidence convention: "{auth_uid}/{uuid}-{filename}". Returns the path. */
+export async function uploadEventPoster(userId: string, file: File): Promise<string> {
+  const s = requireSupabase();
+  const path = `${userId}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
+  const { error: upErr } = await s.storage
+    .from(EVENT_POSTERS_BUCKET)
+    .upload(path, file, { upsert: false, contentType: file.type });
+  await fail(upErr);
+  return path;
+}
+
+/** Public poster URL (public bucket, no signed URLs needed). */
+export function eventPosterPublicUrl(posterPath: string): string {
+  const s = requireSupabase();
+  return s.storage.from(EVENT_POSTERS_BUCKET).getPublicUrl(posterPath).data.publicUrl;
+}
+
+export interface CreateEventValues {
+  title: string;
+  event_type: string;
+  institution_name: string;
+  city: string;
+  state_name: string;
+  start_date: string;
+  end_date: string;
+  poster_path: string;
+  contact_number?: string | null;
+  venue?: string | null;
+  description?: string | null;
+  registration_url?: string | null;
+  contact_name?: string | null;
+  schedule_note?: string | null;
+  status?: string;
+}
+
+export async function createEvent(values: CreateEventValues, created_by: string): Promise<EventRow> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("events")
+    .insert({ ...values, created_by })
+    .select()
+    .single();
+  await fail(error);
+  return data as EventRow;
+}
+
+/** Patch an event. created_by is ALWAYS stripped — ownership can never be
+ * moved through the API, and RLS with-check would reject it anyway. */
+export async function updateEvent(
+  id: string,
+  patch: Partial<CreateEventValues> & { status?: EventStatus }
+): Promise<void> {
+  const s = requireSupabase();
+  const { created_by: _ignored, ...rest } = patch as Record<string, unknown>;
+  const { error } = await s.from("events").update(rest).eq("id", id);
+  await fail(error);
+}
+
+/** Publish / unpublish / cancel. RLS restricts transitions to the creator
+ * (or a platform admin) server-side. */
+export async function setEventStatus(id: string, status: EventStatus): Promise<void> {
+  await updateEvent(id, { status });
+}
+
+/** Deletes the row first (RLS-verified), then best-effort cleans up the poster. */
+export async function deleteEvent(id: string, posterPath: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("events").delete().eq("id", id);
+  await fail(error);
+  // Only succeeds for the caller's own folder (folder-scoped storage policy).
+  const { error: rmErr } = await s.storage.from(EVENT_POSTERS_BUCKET).remove([posterPath]);
+  if (rmErr) console.warn("poster object cleanup failed:", rmErr.message);
+}
+
+export async function fetchEvent(id: string): Promise<EventRow | null> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("events").select("*").eq("id", id).maybeSingle();
+  await fail(error);
+  return (data as EventRow) ?? null;
+}
+
+export interface EventFilters {
+  q?: string; // searches title + institution name
+  city?: string;
+  stateName?: string;
+  eventType?: string;
+  /** upcoming = still ahead or ongoing; past = finished; all = everything. */
+  when?: "upcoming" | "past" | "all";
+  /** soonest = earliest start date first; newest = most recently added. */
+  sort?: "soonest" | "newest";
+  limit?: number;
+}
+
+/** Public discovery listing — RLS already restricts rows to status =
+ * 'published' for everyone except the creator/admin, so no status filter
+ * is duplicated here. */
+export async function listEvents(filters: EventFilters = {}): Promise<EventRow[]> {
+  const s = requireSupabase();
+  let q = s.from("events").select("*");
+  if (filters.q) {
+    // Commas would break the or() grammar; they add nothing to a search.
+    const term = filters.q.replace(/[,()]/g, " ").trim();
+    if (term) {
+      q = q.or(`title.ilike.%${term}%,institution_name.ilike.%${term}%`);
+    }
+  }
+  if (filters.city) q = q.eq("city", filters.city);
+  if (filters.stateName) q = q.eq("state_name", filters.stateName);
+  if (filters.eventType) q = q.eq("event_type", filters.eventType);
+  if (filters.when === "upcoming") q = q.gte("end_date", todayIso());
+  else if (filters.when === "past") q = q.lt("end_date", todayIso());
+  const ascending = (filters.sort ?? "soonest") === "soonest";
+  if (ascending) q = q.order("start_date", { ascending: true });
+  else q = q.order("created_at", { ascending: false });
+  q = q.limit(filters.limit ?? 60);
+  const { data, error } = await q;
+  await fail(error);
+  return (data ?? []) as EventRow[];
+}
+
+export async function listMyEvents(userId: string): Promise<EventRow[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("events")
+    .select("*")
+    .eq("created_by", userId)
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as EventRow[];
+}
+
+/** Local (not UTC) yyyy-mm-dd — "upcoming" is judged in the viewer's day. */
+function todayIso(): string {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
 export function errMessage(e: unknown) {
