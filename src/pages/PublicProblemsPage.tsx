@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
-import { ButtonLink } from "../components/ui";
+import { ButtonLink, Badge } from "../components/ui";
 import {
-  DemoCard, DomainHero, ListingCard, StatusBadge, filterCls, VerificationNote,
+  DemoBadge, DemoBlock, DemoCard, DomainHero, ListingCard, StatusBadge, filterCls, VerificationNote,
 } from "../components/DomainKit";
 import { listProblems, errMessage } from "../lib/api";
 import type { Problem } from "../types/database";
@@ -168,9 +168,39 @@ export default function PublicProblemsPage() {
       <div className="mx-auto mt-12 w-full max-w-6xl px-4 sm:px-6">
         <h2 className="display-title text-2xl">How problems appear here</h2>
         <p className="mt-2 max-w-2xl text-[14px] text-ink-soft">
-          Two illustrative examples that teach what a complete problem brief looks like.
+          Two illustrative examples that teach what a complete problem brief looks like — plus one
+          end-to-end walkthrough of a fictional problem taken the whole way to a Proof Card.
           These are fictional and are the only fictional items on this page.
         </p>
+
+        {/* End-to-end demo walkthrough entry (client-only fictional content) */}
+        <DemoBlock className="mt-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="max-w-2xl">
+              <DemoBadge />
+              <h3 className="mt-2 text-[16px] font-bold text-ink">
+                End-to-end demo: Reducing Material Wastage in Small Manufacturing Units
+              </h3>
+              <p className="mt-1.5 text-[13.5px] leading-relaxed text-ink-soft">
+                Follow one fictional problem from Demo Manufacturing Solutions through a 7-day student
+                sprint — team roles, weighted milestones, example evidence, testing and the generated
+                Proof Card with every metric explained. Everything is fictional and clearly labelled.
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <Badge tone="warn">DEMO</Badge>
+                <Badge tone="warn">FICTIONAL ORGANISATION</Badge>
+                <Badge tone="warn">ILLUSTRATIVE RESULTS</Badge>
+              </div>
+            </div>
+            <div className="flex flex-col items-start gap-2">
+              <ButtonLink to="/problems/demo-material-wastage" size="sm">
+                Explore the full demo walkthrough
+              </ButtonLink>
+              <span className="text-[11.5px] text-ink-soft">No sign-in needed — demo content only</span>
+            </div>
+          </div>
+        </DemoBlock>
+
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {problemDemos.map((d) => <DemoCard key={d.id} demo={d} />)}
         </div>

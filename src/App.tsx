@@ -41,6 +41,7 @@ import AdminPage from "./features/admin/AdminPage";
 
 /* 0003 — platform domains */
 import PublicProblemsPage from "./pages/PublicProblemsPage";
+import DemoProblemWalkthroughPage from "./features/problems/DemoProblemWalkthroughPage";
 import PublicSolutionsPage from "./pages/PublicSolutionsPage";
 import PublicCompanyProjectsPage from "./pages/PublicCompanyProjectsPage";
 import PublicStartupsPage from "./pages/PublicStartupsPage";
@@ -79,6 +80,8 @@ export default function App() {
           <Route path="/terms" element={<TermsPage />} />
           {/* 0003 domains */}
           <Route path="/problems" element={<PublicProblemsPage />} />
+          {/* End-to-end demo walkthrough (fictional, client-only) */}
+          <Route path="/problems/demo-material-wastage" element={<DemoProblemWalkthroughPage />} />
           <Route path="/solutions" element={<PublicSolutionsPage />} />
           <Route path="/company-projects" element={<PublicCompanyProjectsPage />} />
           <Route path="/startups-funding" element={<PublicStartupsPage />} />
