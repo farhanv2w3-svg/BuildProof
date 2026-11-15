@@ -26,13 +26,23 @@ export default function ProblemsPage() {
     queryFn: listProblems,
     enabled: !!user,
   });
-  const [filter, setFilter] = useState<"approved" | "all">("approved");
   const isAdmin = isPlatformAdmin(roles);
+  // "approved" – screened problems for teams; "mine" – own submissions;
+  // "all" – admins only (RLS returns every state for them anyway).
+  const [filter, setFilter] = useState<"approved" | "mine" | "all">("approved");
 
   const visible = useMemo(() => {
     const list = problems ?? [];
-    return filter === "approved" ? list.filter((p) => p.status === "approved") : list;
-  }, [problems, filter]);
+    if (filter === "approved") return list.filter((p) => p.status === "approved");
+    if (filter === "mine") return list.filter((p) => p.submitted_by === (user?.id ?? null));
+    return list;
+  }, [problems, filter, user?.id]);
+
+  if (isLoading) return <LoadingBlock />;
+
+  const filters = (
+    isAdmin ? (["approved", "all"] as const) : (["approved", "mine"] as const)
+  ) satisfies ReadonlyArray<"approved" | "mine" | "all">;
 
   if (isLoading) return <LoadingBlock />;
 
@@ -45,7 +55,7 @@ export default function ProblemsPage() {
       />
 
       <div className="mb-4 flex gap-2">
-        {(["approved", "all"] as const).map((f) => (
+        {filters.map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -55,7 +65,7 @@ export default function ProblemsPage() {
                 : "rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-soft hover:text-ink"
             }
           >
-            {f === "approved" ? "Approved problems" : isAdmin ? "All (admin)" : "My submissions"}
+            {f === "approved" ? "Approved problems" : f === "mine" ? "My submissions" : "All (admin)"}
           </button>
         ))}
       </div>
@@ -63,11 +73,15 @@ export default function ProblemsPage() {
       {visible.length === 0 ? (
         <EmptyState
           icon={<Compass className="h-6 w-6" />}
-          title={filter === "approved" ? "No approved problems yet" : "Nothing here yet"}
+          title={
+            filter === "approved" ? "No approved problems yet" : filter === "mine" ? "You haven't submitted a problem yet" : "Nothing here yet"
+          }
           description={
             filter === "approved"
               ? "Approved problems will appear here once reviewers screen submissions."
-              : "Submit a real-world problem you've noticed. It will be screened before it's approved for teams."
+              : filter === "mine"
+                ? "Submit a real-world problem you've noticed. It will be screened before it's approved for teams. Your submissions appear here."
+                : "Submit a real-world problem you've noticed. It will be screened before it's approved for teams."
           }
           action={<ButtonLink to="/submit-problem" variant="secondary" size="sm">Submit a problem</ButtonLink>}
         />

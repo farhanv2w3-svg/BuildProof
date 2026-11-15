@@ -240,20 +240,51 @@ function AgreementsSection({ solutionId, rows }: { solutionId: string; rows: Sol
                       try {
                         await updateTransferAgreement(a.id, {
                           status: e.target.value as SolutionTransferAgreement["status"],
-                          agreed_by_creator: true,
-                          agreed_by_other: e.target.value !== "draft" && e.target.value !== "under_discussion",
                         });
                         await qc.invalidateQueries({ queryKey: ["agreements", solutionId] });
                       } catch (err2) { setErr(err2 instanceof Error ? err2.message : "Failed."); }
                     }}
                   >
-                    {["draft", "under_discussion", "agreed", "executed", "cancelled"].map((s) => <option key={s} value={s}>{s.replace(/_/g, " ")}</option>)}
+                    {["draft", "under_discussion", "agreed", "executed", "cancelled"].map((s) => <option key={s} value={s} disabled={(s === "agreed" || s === "executed") && !(a.agreed_by_creator && a.agreed_by_other)}>{s.replace(/_/g, " ")}</option>)}
                   </Select>
                 </span>
               </div>
               <p className="mt-1 text-ink-soft">{a.terms}</p>
               {a.compensation_note && <p className="text-ink-soft"><strong>Compensation:</strong> {a.compensation_note}</p>}
               {a.creator_rights_note && <p className="text-ink-soft"><strong>Creator rights:</strong> {a.creator_rights_note}</p>}
+              <div className="mt-2 flex flex-wrap gap-2 border-t border-line pt-2">
+                <Button
+                  size="sm"
+                  variant={a.agreed_by_creator ? "secondary" : "primary"}
+                  disabled={a.agreed_by_creator || a.status === "cancelled"}
+                  onClick={async () => {
+                    try {
+                      await updateTransferAgreement(a.id, { agreed_by_creator: true });
+                      await qc.invalidateQueries({ queryKey: ["agreements", solutionId] });
+                    } catch (err2) { setErr(err2 instanceof Error ? err2.message : "Failed to record consent."); }
+                  }}
+                >
+                  {a.agreed_by_creator ? "Creator team consent recorded" : "Creator team consents"}
+                </Button>
+                {user?.id === a.proposed_by && (
+                  <Button
+                    size="sm"
+                    variant={a.agreed_by_other ? "secondary" : "primary"}
+                    disabled={a.agreed_by_other || a.status === "cancelled"}
+                    onClick={async () => {
+                      try {
+                        await updateTransferAgreement(a.id, { agreed_by_other: true });
+                        await qc.invalidateQueries({ queryKey: ["agreements", solutionId] });
+                      } catch (err2) { setErr(err2 instanceof Error ? err2.message : "Failed to record consent."); }
+                    }}
+                  >
+                    {a.agreed_by_other ? "Your consent recorded" : "I consent as proposer"}
+                  </Button>
+                )}
+                <span className="self-center text-[11px] text-ink-soft">
+                  Mutual consent: {a.agreed_by_creator && a.agreed_by_other ? "complete" : "pending"}
+                </span>
+              </div>
             </li>
           ))}
         </ul>

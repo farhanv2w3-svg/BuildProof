@@ -10,6 +10,8 @@ import {
   reviewPrototype,
   fetchUserTests,
   createUserTest,
+  fetchTeamDecisions,
+  createTeamDecision,
   errMessage,
 } from "../../lib/api";
 import {
@@ -117,9 +119,12 @@ export default function TestsPage() {
       <AttachmentsCard teamId={teamId} userId={user.id} stage="prototype" />
 
       <Card>
-        <CardHeader title="Final decision" sub="Continue, revise, or stop." />
+        <CardHeader title="Final decision" sub="Continue, revise, or stop — recorded as an auditable team decision." />
         <div className="px-5 pb-5">
-          <DecisionPanelStage teamId={teamId} userId={user.id} />
+          <FinalDecisionsList teamId={teamId} />
+          <div className="mt-4">
+            <DecisionPanelStage teamId={teamId} userId={user.id} />
+          </div>
         </div>
       </Card>
 
@@ -270,46 +275,71 @@ function TestFormPanel({ testId, teamId }: { testId: string | null; teamId: stri
 function DecisionPanelStage({ teamId, userId }: { teamId: string; userId: string }) {
   const qc = useQueryClient();
   const [decision, setDecision] = useState("");
+  const [rationale, setRationale] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <div className="flex flex-wrap items-end gap-2">
-      {(["continue", "revise", "stop"] as const).map((d) => (
-        <button
-          key={d}
-          type="button"
-          onClick={() => setDecision(d)}
-          className={
-            decision === d
-              ? "rounded-lg border border-brand-600 bg-brand-50 px-3 py-1.5 text-[13px] font-semibold text-brand-700"
-              : "rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-soft hover:text-ink"
-          }
-        >
-          {titleize(d)}
-        </button>
-      ))}
-      <Button
-        disabled={!decision}
-        loading={busy}
-        onClick={async () => {
-          setBusy(true);
-          setErr(null);
-          try {
-            const proto = await fetchPrototype(teamId);
-            if (!proto) throw new Error("Save the prototype stage first.");
-            await reviewPrototype(proto.id, userId, proto.reviewer_feedback ?? "", "reviewed", decision as "continue" | "revise" | "stop");
-
-            await qc.invalidateQueries({ queryKey: ["prototype", teamId] });
-          } catch (e) {
-            setErr(errMessage(e));
-          } finally {
-            setBusy(false);
-          }
-        }}
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-end gap-2">
+        {(["continue", "revise", "stop"] as const).map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => setDecision(d)}
+            className={
+              decision === d
+                ? "rounded-lg border border-brand-600 bg-brand-50 px-3 py-1.5 text-[13px] font-semibold text-brand-700"
+                : "rounded-lg border border-line bg-surface px-3 py-1.5 text-[13px] text-ink-soft hover:text-ink"
+            }
+          >
+            {titleize(d)}
+          </button>
+        ))}
+      </div>
+      <Field
+        label="Rationale (required — recorded as a team decision and visible to reviewers)"
+        hint="At least 10 characters: state what evidence the decision rests on."
       >
-        Record final decision
-      </Button>
-      {err && <span className="text-[12px] text-danger">{err}</span>}
+        <Textarea
+          value={rationale}
+          onChange={(e) => setRationale(e.target.value)}
+          rows={2}
+          maxLength={1000}
+          placeholder="e.g. 6 of 8 user tests completed the core task; iteration notes show the next change."
+        />
+      </Field>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          disabled={!decision}
+          loading={busy}
+          onClick={async () => {
+            setBusy(true);
+            setErr(null);
+            try {
+              if (rationale.trim().length < 10) {
+                throw new Error("Write a rationale of at least 10 characters before recording the decision.");
+              }
+              /* Team decisions are recorded in team_decisions (decided_by enforced
+                 by RLS) — NOT through the reviewer-only reviewPrototype API, which
+                 previously stamped review status under a team member's id (A9/S-fix). */
+              await createTeamDecision(
+                { team_id: teamId, stage: "prototype", decision, rationale: rationale.trim() },
+                userId
+              );
+              setDecision("");
+              setRationale("");
+              await qc.invalidateQueries({ queryKey: ["teamDecisions", teamId] });
+            } catch (e) {
+              setErr(errMessage(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Record final decision
+        </Button>
+        {err && <span className="text-[12px] text-danger">{err}</span>}
+      </div>
     </div>
   );
 }
@@ -341,6 +371,26 @@ function ReviewerPanel({ recordId, teamId }: { recordId: string; teamId: string 
         {done ? "Saved" : "Save review comment"}
       </Button>
     </div>
+  );
+}
+
+/** Latest prototype-stage team decisions (fetchTeamDecisions — stage="prototype"). */
+function FinalDecisionsList({ teamId }: { teamId: string }) {
+  const { data: decisions } = useQuery({
+    queryKey: ["teamDecisions", teamId],
+    queryFn: () => fetchTeamDecisions(teamId),
+  });
+  const proto = (decisions ?? []).filter((d) => d.stage === "prototype");
+  if (proto.length === 0) return null;
+  return (
+    <ul className="space-y-1.5">
+      {proto.map((d) => (
+        <li key={d.id} className="rounded-lg border border-line bg-canvas px-3 py-2 text-[13px]">
+          <span className="font-semibold">{titleize(d.decision)}</span>
+          <span className="ml-2 text-[12px] text-ink-soft">{d.rationale}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

@@ -21,3 +21,6 @@ Thumbs.db
 *.log
 .vite/
 coverage/
+
+# Supabase CLI local metadata (never commit)
+supabase/.temp/

@@ -62,13 +62,12 @@ export default function DashboardPage() {
           icon={<GraduationCap className="h-5 w-5" />}
           label="Cohorts you're in"
           value={(cohorts ?? []).length}
-          to="/app"
         />
         <StatCard
           icon={<ClipboardList className="h-5 w-5" />}
           label="Proof Cards on your teams"
           value={(cards ?? []).length}
-          to="/app"
+          to="/app/my-proof"
         />
       </div>
 
@@ -161,7 +160,7 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ icon, label, value, to }: { icon: ReactNode; label: string; value: number; to: string }) {
+function StatCard({ icon, label, value, to }: { icon: ReactNode; label: string; value: number; to?: string }) {
   return (
     <div className="rounded-card border border-line bg-surface p-5 shadow-card">
       <div className="flex items-center justify-between">
@@ -169,9 +168,15 @@ function StatCard({ icon, label, value, to }: { icon: ReactNode; label: string; 
         <span className="font-display text-2xl font-extrabold">{value}</span>
       </div>
       <p className="mt-3 text-[13px] text-ink-soft">{label}</p>
-      <Link to={to} className="mt-1 inline-block text-[12px] font-semibold text-brand-700 hover:underline">
-        Details →
-      </Link>
+      {/*
+        "to" is optional: only render a link when a real destination exists
+        (the list of cohorts lives on this page itself — a self-link there
+        would be circular). */}
+      {to && (
+        <Link to={to} className="mt-1 inline-block text-[12px] font-semibold text-brand-700 hover:underline">
+          Details →
+        </Link>
+      )}
     </div>
   );
 }

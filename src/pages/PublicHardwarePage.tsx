@@ -1,6 +1,8 @@
-import { ButtonLink } from "../components/ui";
+import { useQuery } from "@tanstack/react-query";
+import { ButtonLink, Card, LoadingBlock } from "../components/ui";
 import { DemoCard, DomainHero, StatusBadge } from "../components/DomainKit";
 import { hardwareDemos } from "../lib/demoData";
+import { listPublicHardware } from "../lib/api";
 
 const STAGES = [
   "Concept & problem definition",
@@ -18,6 +20,7 @@ const STAGES = [
 ];
 
 export default function PublicHardwarePage() {
+  const { data: projects, isLoading } = useQuery({ queryKey: ["publicHardware"], queryFn: listPublicHardware });
   return (
     <div className="pb-20">
       <DomainHero
@@ -62,6 +65,20 @@ export default function PublicHardwarePage() {
             <p className="mt-1 text-[12px] leading-relaxed text-ink-soft">{d}</p>
           </div>
         ))}
+      </div>
+
+      <div className="mx-auto mt-10 w-full max-w-6xl px-4 sm:px-6">
+        <h2 className="display-title text-2xl">Published hardware projects</h2>
+        <p className="mt-1 text-[13px] text-ink-soft">Public records shared by their teams. Private design files and restricted evidence are never included here.</p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {isLoading ? <LoadingBlock /> : projects && projects.length > 0 ? projects.map((project) => (
+            <Card key={project.id} className="p-4">
+              <div className="flex items-start justify-between gap-2"><h3 className="font-bold text-ink">{project.name}</h3><StatusBadge status={project.lifecycle_status ?? "prototype"} /></div>
+              <p className="mt-2 text-[13px] text-ink-soft">{project.description}</p>
+              {project.demo_url && <a className="mt-3 inline-block text-[13px] font-semibold text-brand-700" href={project.demo_url} target="_blank" rel="noreferrer">View prototype link →</a>}
+            </Card>
+          )) : <Card className="p-5 text-[13px] text-ink-soft">No public hardware projects have been published yet.</Card>}
+        </div>
       </div>
 
       {/* Demo projects */}

@@ -94,6 +94,22 @@ function HardwareRow({ row }: { row: HardwareProject }) {
         <div className="flex items-center gap-2">
           <StatusBadge status={row.readiness_class} />
           <Select
+            aria-label={`Visibility for ${row.name}`}
+            className="w-36 text-[11.5px]"
+            value={row.visibility ?? "private"}
+            onChange={async (e) => {
+              const visibility = e.target.value as "private" | "restricted" | "public";
+              try {
+                await updateHardwareProject(row.id, { visibility, published_at: visibility === "public" ? new Date().toISOString() : null });
+                await qc.invalidateQueries({ queryKey: ["hardware"] });
+              } catch (err2) { setErr(err2 instanceof Error ? err2.message : "Failed."); }
+            }}
+          >
+            <option value="private">Private</option>
+            <option value="restricted">Restricted</option>
+            <option value="public">Public</option>
+          </Select>
+          <Select
             aria-label={`Advance stage for ${row.name}`}
             className="w-40 text-[11.5px]"
             value={String(row.current_stage)}

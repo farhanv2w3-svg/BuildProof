@@ -45,9 +45,9 @@ export function ProofCardContributions({ cardId }: { cardId: string }) {
                 </p>
                 <p className="text-[12.5px] text-ink-soft">{r.contribution}</p>
                 {r.deliverable_links.length > 0 && (
-                  <p className="mt-0.5 break-all text-[11.5px] text-ink-soft/80">Evidence links: {r.deliverable_links.join(", ")}</p>
+                  <p className="mt-0.5 break-all text-[11.5px] text-ink-soft">Evidence links: {r.deliverable_links.join(", ")}</p>
                 )}
-                {r.outcome_note && <p className="mt-0.5 text-[11.5px] text-ink-soft/80">Outcome note: {r.outcome_note}</p>}
+                {r.outcome_note && <p className="mt-0.5 text-[11.5px] text-ink-soft">Outcome note: {r.outcome_note}</p>}
               </div>
               <div className="flex items-center gap-2">
                 <StatusBadge status={r.paid ? "paid" : "agreed"} />

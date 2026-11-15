@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { listEvidence, uploadEvidence, evidenceDownloadUrl, deleteEvidence, errMessage } from "../../lib/api";
+import { listEvidence, uploadEvidence, associateEvidence, evidenceDownloadUrl, deleteEvidence, errMessage } from "../../lib/api";
 import { Badge, Button, Card, CardHeader, Field, Select, ErrorBanner } from "../../components/ui";
 import { validateUpload } from "../../lib/validation";
 import { formatDate, titleize } from "../../lib/utils";
@@ -16,14 +16,21 @@ export function AttachmentsCard({
   teamId,
   userId,
   stage,
+  proofCardId,
 }: {
   teamId: string;
   userId: string;
   stage: "validation" | "feasibility" | "prototype";
+  proofCardId?: string;
 }) {
-  const { data: attachments } = useQuery({
-    queryKey: ["evidence", teamId],
-    queryFn: () => listEvidence(teamId),
+  const { data: attachments, isLoading, error: loadError } = useQuery({
+    queryKey: ["evidence", teamId, proofCardId],
+    queryFn: () => listEvidence(teamId, undefined, proofCardId),
+  });
+  const { data: unlinkedAttachments } = useQuery({
+    queryKey: ["evidence", teamId, "unlinked"],
+    queryFn: () => listEvidence(teamId, undefined, null),
+    enabled: !!proofCardId,
   });
   const qc = useQueryClient();
   const [err, setErr] = useState<string | null>(null);
@@ -31,12 +38,21 @@ export function AttachmentsCard({
   const [file, setFile] = useState<File | null>(null);
   const [visibility, setVisibility] = useState<"team" | "reviewers">("reviewers");
 
+  const link = useMutation({
+    mutationFn: (evidenceId: string) => associateEvidence(evidenceId, teamId, proofCardId!),
+    onSuccess: async () => {
+      setErr(null);
+      await qc.invalidateQueries({ queryKey: ["evidence", teamId] });
+    },
+    onError: (e) => setErr(errMessage(e)),
+  });
+
   const upload = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error("Choose a file first");
       const problem = validateUpload(file);
       if (problem) throw new Error(problem);
-      return uploadEvidence(teamId, stage, visibility, userId, file);
+      return uploadEvidence(teamId, stage, visibility, userId, file, proofCardId);
     },
     onSuccess: async () => {
       setFile(null);
@@ -73,6 +89,28 @@ export function AttachmentsCard({
           </Button>
         </div>
 
+        {loadError && <div className="mt-3"><ErrorBanner message={errMessage(loadError)} /></div>}
+        {isLoading && <p className="mt-3 text-[12.5px] text-ink-soft">Loading evidence…</p>}
+        {!!proofCardId && (unlinkedAttachments ?? []).length > 0 && (
+          <div className="mt-4 rounded-lg border border-line bg-canvas p-3">
+            <p className="text-[12px] font-bold text-ink">Link existing evidence to this Proof Card</p>
+            <div className="mt-2 space-y-2">
+              {(unlinkedAttachments ?? []).map((attachment) => (
+                <div key={attachment.id} className="flex flex-wrap items-center justify-between gap-2 text-[12.5px]">
+                  <span>{attachment.file_name}</span>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    loading={link.isPending}
+                    onClick={() => link.mutate(attachment.id)}
+                  >
+                    Link to card
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <ul className="mt-4 space-y-2">
           {(attachments ?? []).map((a) => (
             <li
@@ -120,7 +158,7 @@ export function AttachmentsCard({
             </li>
           ))}
         </ul>
-        {(attachments ?? []).length === 0 && (
+        {!isLoading && (attachments ?? []).length === 0 && (
           <p className="mt-3 text-[12.5px] text-ink-soft">
             No attachments yet. Photos of the problem, consented interview recordings or transcripts, and test materials all count as evidence.
           </p>

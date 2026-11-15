@@ -1,0 +1,118 @@
+<svg viewBox="0 0 560 480" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="heroIllusTitle">
+  <title id="heroIllusTitle">Illustration of the BuildProof journey: a real problem moves through research, validation and building, gets tested, and becomes a Proof Card backed by evidence.</title>
+  <defs>
+    <linearGradient id="bpTrail" x1="60" y1="420" x2="470" y2="86" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#159875" stop-opacity="0"/>
+      <stop offset="0.25" stop-color="#159875" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#105B49"/>
+    </linearGradient>
+    <linearGradient id="bpBlob" x1="120" y1="60" x2="520" y2="440" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#DDF2E8"/>
+      <stop offset="1" stop-color="#F6F9F6"/>
+    </linearGradient>
+    <clipPath id="bpRound"><rect x="0" y="0" width="560" height="480" rx="24"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#bpRound)">
+    <!-- soft background field -->
+    <rect width="560" height="480" fill="url(#bpBlob)"/>
+    <circle cx="452" cy="410" r="150" fill="#DDF2E8" opacity="0.55"/>
+    <circle cx="96" cy="88" r="88" fill="#DDF2E8" opacity="0.65"/>
+
+    <!-- dotted web grid hint -->
+    <g stroke="#E5ECE7" stroke-width="1.4" stroke-linecap="round" stroke-dasharray="2 8" opacity="0.9">
+      <path d="M60 96h440"/><path d="M60 152h440"/><path d="M60 208h440"/>
+      <path d="M60 264h440"/><path d="M60 320h440"/><path d="M60 376h440"/>
+    </g>
+
+    <!-- evidence layers stack (bottom-left) -->
+    <g>
+      <rect x="52" y="330" width="150" height="98" rx="12" fill="#FFFFFF" stroke="#E5ECE7"/>
+      <rect x="64" y="318" width="150" height="98" rx="12" fill="#FFFFFF" stroke="#E5ECE7"/>
+      <rect x="76" y="306" width="150" height="98" rx="12" fill="#FFFFFF" stroke="#159875" stroke-opacity="0.35"/>
+      <g>
+        <rect x="92" y="324" width="86" height="9" rx="4.5" fill="#DDF2E8"/>
+        <rect x="92" y="343" width="118" height="7" rx="3.5" fill="#E5ECE7"/>
+        <rect x="92" y="358" width="104" height="7" rx="3.5" fill="#E5ECE7"/>
+        <rect x="92" y="378" width="52" height="12" rx="6" fill="#DDF2E8"/>
+      </g>
+      <text x="118" y="300" font-family="Manrope, Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1.4" fill="#105B49">EVIDENCE LAYERS</text>
+    </g>
+
+    <!-- progress signal card (top-right) -->
+    <g>
+      <rect x="392" y="196" width="140" height="128" rx="12" fill="#FFFFFF" stroke="#E5ECE7"/>
+      <text x="408" y="222" font-family="Manrope, Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#172720">PROGRESS</text>
+      <g stroke="#E5ECE7" stroke-width="10" stroke-linecap="round">
+        <path d="M408 244h108"/><path d="M408 266h84"/><path d="M408 288h64"/>
+      </g>
+      <g stroke-linecap="round">
+        <path stroke="#159875" stroke-width="10" d="M408 244h74"/>
+        <path stroke="#239D9A" stroke-width="10" d="M408 266h52"/>
+        <path stroke="#105B49" stroke-width="10" d="M408 288h34"/>
+      </g>
+      <g fill="#105B49">
+        <circle cx="492" cy="244" r="6" fill="#C7F36B"/>
+        <circle cx="470" cy="266" r="6"/>
+        <circle cx="450" cy="288" r="6"/>
+      </g>
+    </g>
+
+    <!-- the proof trail -->
+    <path d="M118 352 C 200 330, 216 262, 262 236 S 356 196, 388 156 C 416 120, 428 104, 442 88"
+      stroke="url(#bpTrail)" stroke-width="5" stroke-linecap="round"
+      stroke-dasharray="1 14"/>
+    <!-- node: 1 problem -->
+    <g>
+      <circle cx="118" cy="352" r="27" fill="#FFFFFF" stroke="#E5ECE7"/>
+      <circle cx="118" cy="352" r="23" fill="none" stroke="#3B61B8" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="3 5"/>
+      <text x="118" y="359" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-size="19" font-weight="800" fill="#3B61B8">?</text>
+      <text x="118" y="394" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1" fill="#58675F">PROBLEM</text>
+    </g>
+    <!-- node: 2 research -->
+    <g>
+      <circle cx="262" cy="236" r="27" fill="#FFFFFF" stroke="#E5ECE7"/>
+      <circle cx="257" cy="231" r="8.5" fill="none" stroke="#159875" stroke-width="2.6"/>
+      <path d="M263 238l7.5 7.5" stroke="#159875" stroke-width="2.6" stroke-linecap="round"/>
+      <text x="262" y="278" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1" fill="#58675F">RESEARCH</text>
+    </g>
+    <!-- node: 3 validate -->
+    <g>
+      <circle cx="388" cy="156" r="27" fill="#105B49"/>
+      <path d="M377 156l7.5 7.5L400 147.5" stroke="#C7F36B" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <text x="388" y="198" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1" fill="#58675F">VALIDATE</text>
+    </g>
+    <!-- node: 4 test -->
+    <g>
+      <circle cx="474" cy="96" r="30" fill="#FFFFFF" stroke="#239D9A" stroke-width="2"/>
+      <path d="M466 88h16M469 88l1.5 12c0.6 4.8 6 7.5 10.5 5.2 2.4-1.2 3.6-3 3.9-5.2l1.4-12" stroke="#17726F" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="473" cy="101" r="2.1" fill="#239D9A"/>
+      <circle cx="479" cy="98.5" r="1.5" fill="#239D9A"/>
+      <text x="474" y="140" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-size="11" font-weight="700" letter-spacing="1" fill="#58675F">TEST</text>
+    </g>
+
+    <!-- proof card artefact -->
+    <g>
+      <rect x="196" y="66" width="176" height="118" rx="14" fill="#105B49"/>
+      <rect x="196" y="66" width="176" height="118" rx="14" stroke="#0B4638"/>
+      <circle cx="226" cy="98" r="14" opacity="0"/>
+      <rect x="216" y="86" width="60" height="10" rx="5" fill="#C7F36B" opacity="0.9"/>
+      <rect x="216" y="110" width="132" height="7" rx="3.5" fill="#DDF2E8" opacity="0.8"/>
+      <rect x="216" y="124" width="112" height="7" rx="3.5" fill="#DDF2E8" opacity="0.55"/>
+      <rect x="216" y="138" width="120" height="7" rx="3.5" fill="#DDF2E8" opacity="0.38"/>
+      <g>
+        <rect x="216" y="156" width="58" height="16" rx="8" fill="#DDF2E8" opacity="0.9"/>
+        <circle cx="228" cy="164" r="4" fill="#105B49"/>
+        <text x="238" y="168" font-family="Manrope, Inter, sans-serif" font-size="9" font-weight="800" fill="#105B49">TIER · 3</text>
+      </g>
+      <path d="M336 92l9 9 16-17" stroke="#C7F36B" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <text x="284" y="212" text-anchor="middle" font-family="Manrope, Inter, sans-serif" font-size="11" font-weight="800" letter-spacing="1.4" fill="#105B49">PROOF</text>
+    </g>
+
+    <!-- floating lime spark -->
+    <g>
+      <path d="M330 300c14-8 30-6 38 4-12 4-18 14-16 26-9-7-20-6-28 2 0-12 6-26 6-32z" fill="#C7F36B" opacity="0.9"/>
+    </g>
+  </g>
+  <rect x="1" y="1" width="558" height="478" rx="23" stroke="#E5ECE7"/>
+</svg>

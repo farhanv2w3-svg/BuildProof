@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { ButtonLink, Badge } from "../components/ui";
+import { ButtonLink, Badge, InfoNote } from "../components/ui";
 import {
   DemoBadge, DemoBlock, DemoCard, DomainHero, ListingCard, StatusBadge, filterCls, VerificationNote,
 } from "../components/DomainKit";
 import { listProblems, errMessage } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import type { Problem } from "../types/database";
 import { problemDemos } from "../lib/demoData";
 
@@ -17,21 +18,34 @@ const SOURCE_FILTERS = [
 ] as const;
 
 export default function PublicProblemsPage() {
+  const { user } = useAuth();
   const [problems, setProblems] = useState<Problem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [source, setSource] = useState<(typeof SOURCE_FILTERS)[number]["key"]>("all");
   const [category, setCategory] = useState("all");
   const [query, setQuery] = useState("");
 
+  /* LIVE DATA POLICY (§5): `problems` is authenticated-only by design
+     (migration 0001:716-718 — anonymous visitors see no live rows, and the
+     database intentionally has NO anonymous policy for this table).
+
+     - Signed-out visitors: no query is attempted; they see demo content and a
+       clear sign-in explanation instead of a raw Postgres permission error.
+     - Signed-in users: the live pool is loaded and filtered to rows intended
+       for public display (is_public) that passed review (approved). */
   useEffect(() => {
+    if (!user) { setProblems([]); setError(null); return; }
     let live = true;
+    setLoading(true);
     listProblems()
-      .then((rows) => { if (live) setProblems(rows.filter((p) => p.is_public)); })
+      .then((rows) => {
+        if (live) setProblems(rows.filter((p) => p.is_public && p.status === "approved"));
+      })
       .catch((e) => { if (live) setError(errMessage(e)); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, []);
+  }, [user]);
 
   const sourceLabels: Record<string, string> = {
     company: "Company-submitted", individual: "Individual-submitted", small_business: "Small business",
@@ -59,28 +73,16 @@ export default function PublicProblemsPage() {
         }
       />
 
-      {/* Categories explainer */}
-      <div className="mx-auto mt-8 grid w-full max-w-6xl gap-3 px-4 sm:grid-cols-5 sm:px-6">
-        {[
-          ["Company-submitted", "Established companies or startups with genuine requirements. Verification status shown honestly."],
-          ["Individual", "Everyday, education, agriculture, accessibility and community problems from real people."],
-          ["Small business", "Retailers, manufactures, service providers and local enterprises."],
-          ["NGO & community", "NGOs, institutions and public-interest organisations."],
-          ["BuildProof-discovered", "Problems BuildProof identifies from public or independent research — never claimed as endorsements."],
-        ].map(([t, d]) => (
-          <div key={t} className="rounded-card border border-line bg-surface p-4">
-            <h3 className="text-[13px] font-bold text-ink">{t}</h3>
-            <p className="mt-1 text-[12px] leading-relaxed text-ink-soft">{d}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters */}
       <div className="mx-auto mt-8 w-full max-w-6xl px-4 sm:px-6">
+        {/* Filters — they operate on the live list for signed-in users */}
         <div className="rounded-card border border-line bg-surface p-4">
           <div className="flex flex-wrap items-center gap-2">
             {SOURCE_FILTERS.map((f) => (
-              <button key={f.key} className={filterCls(source === f.key)} onClick={() => setSource(f.key)}>
+              <button
+                key={f.key}
+                onClick={() => setSource(f.key)}
+                className={filterCls(source === f.key)}
+              >
                 {f.label}
               </button>
             ))}
@@ -98,7 +100,7 @@ export default function PublicProblemsPage() {
               ))}
             </select>
             <input
-              className="min-w-[220px] flex-1 rounded-md border border-line bg-surface px-3 py-1.5 text-[12.5px]"
+              className="min-w-[220px] flex-1 rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px]"
               placeholder="Search problems…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -108,19 +110,44 @@ export default function PublicProblemsPage() {
         </div>
       </div>
 
-      {/* Live problems */}
+      {/* Live problems — status-aware block with loading / empty / error / sign-in states */}
       <div className="mx-auto mt-6 w-full max-w-6xl px-4 sm:px-6">
         <h2 className="text-[17px] font-bold text-ink">Submitted problems</h2>
-        {error && <p className="mt-2 text-[13px] text-danger" role="alert">{error}</p>}
-        {loading ? (
-          <p className="mt-3 text-[13.5px] text-ink-soft">Loading problems…</p>
-        ) : filtered.length === 0 ? (
+
+        {!user && (
+          <div className="mt-3">
+            <InfoNote>
+              <strong className="text-ink">Live problem briefs are available inside the app.</strong>{" "}
+              Sign in to browse the reviewed problem pool — teams pick one of these problems to
+              investigate and turn into a Proof Card. Everything below stays labelled as illustrative.
+            </InfoNote>
+            <div className="mt-3 flex gap-2">
+              <ButtonLink to="/login" size="sm">Sign in</ButtonLink>
+              <ButtonLink to="/signup" size="sm" variant="secondary">Create an account</ButtonLink>
+            </div>
+          </div>
+        )}
+
+        {user && loading && <p className="mt-3 text-[13.5px] text-ink-soft">Loading problems…</p>}
+
+        {user && !loading && error && (
+          <div className="mt-3 rounded-lg border border-warn/30 bg-warn-soft px-4 py-3 text-[13.5px] text-warn" role="alert">
+            <p>Live problems couldn't be loaded just now — this is usually temporary.</p>
+            <div className="mt-2 flex gap-2">
+              <ButtonLink to="/login" size="sm" variant="secondary">Reload the page</ButtonLink>
+            </div>
+          </div>
+        )}
+
+        {user && !loading && !error && filtered.length === 0 && (
           <div className="mt-3 rounded-card border border-dashed border-line bg-surface p-6 text-center">
             <p className="text-[14px] font-semibold text-ink">No problems match these filters yet.</p>
             <p className="mt-1 text-[13px] text-ink-soft">Be the first to document a real problem worth solving.</p>
             <div className="mt-3"><ButtonLink to="/submit-problem">Submit the first problem</ButtonLink></div>
           </div>
-        ) : (
+        )}
+
+        {user && !loading && !error && filtered.length > 0 && (
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             {filtered.map((p) => (
               <ListingCard
@@ -153,7 +180,14 @@ export default function PublicProblemsPage() {
                 </dl>
                 <p className="mt-2 line-clamp-3 text-ink-soft">{p.description}</p>
                 {p.source_type === "company" && (
-                  <p className="mt-2"><VerificationNote status="unverified" /></p>
+                  <p className="mt-2">
+                    {/* Honest screening state (not a fabricated "verified" claim):
+                        problems have no org-verification column, but approved
+                        problems HAVE been reviewed by BuildProof reviewers. */}
+                    {p.status === "approved"
+                      ? <Badge tone="info">Reviewed & approved by BuildProof reviewers</Badge>
+                      : <VerificationNote status="unverified" />}
+                  </p>
                 )}
               </ListingCard>
             ))}
@@ -161,6 +195,7 @@ export default function PublicProblemsPage() {
         )}
         <p className="mt-3 text-[12.5px] text-ink-soft">
           Full problem briefs, participation options and owner contact open inside the app after sign-in.
+          Contact details are never shown publicly.
         </p>
       </div>
 

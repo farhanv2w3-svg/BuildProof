@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes, TextareaHTMLAttributes } from "react";
 import { Link } from "react-router-dom";
 import { LoaderCircle } from "lucide-react";
@@ -9,14 +10,14 @@ type Variant = "primary" | "secondary" | "ghost" | "danger" | "accent";
 type Size = "sm" | "md" | "lg";
 
 const base =
-  "inline-flex items-center justify-center gap-2 font-semibold rounded-lg transition-colors duration-150 disabled:opacity-55 disabled:pointer-events-none whitespace-nowrap";
+  "inline-flex items-center justify-center gap-2 font-semibold rounded-lg transition-[background-color,border-color,color,box-shadow,transform] duration-200 active:scale-[0.98] disabled:opacity-55 disabled:pointer-events-none whitespace-nowrap";
 
 const variants: Record<Variant, string> = {
-  primary: "bg-brand-600 text-white hover:bg-brand-700",
+  primary: "bg-brand-700 text-white hover:bg-brand-800 shadow-[0_1px_2px_rgb(16_91_73/0.24)]",
   secondary: "bg-surface text-ink border border-line hover:border-brand-400 hover:text-brand-700",
-  ghost: "text-ink-soft hover:text-ink hover:bg-line/40",
+  ghost: "text-ink-soft hover:text-ink hover:bg-brand-100/60",
   danger: "bg-danger text-white hover:opacity-90",
-  accent: "bg-accent-500 text-white hover:bg-accent-600",
+  accent: "bg-lime-400 text-ink hover:bg-lime-300",
 };
 
 const sizes: Record<Size, string> = {
@@ -71,6 +72,50 @@ export function ButtonLink({
 
 /* -------------------------------- Card ----------------------------- */
 
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel = "Confirm",
+  destructive = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  description: string;
+  confirmLabel?: string;
+  destructive?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    window.requestAnimationFrame(() => document.querySelector<HTMLButtonElement>("[data-confirm-dialog-primary]")?.focus());
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onCancel]);
+
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onMouseDown={(event) => {
+      if (event.target === event.currentTarget) onCancel();
+    }}>
+      <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-dialog-title" aria-describedby="confirm-dialog-description" className="w-full max-w-md rounded-2xl border border-line bg-surface p-5 shadow-lift">
+        <h2 id="confirm-dialog-title" className="font-display text-lg font-bold text-ink">{title}</h2>
+        <p id="confirm-dialog-description" className="mt-2 text-sm text-ink-soft">{description}</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button data-confirm-dialog-primary variant={destructive ? "danger" : "primary"} onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Card({ className, children }: { className?: string; children: ReactNode }) {
   return (
     <div
@@ -105,6 +150,9 @@ const badgeTones: Record<string, string> = {
   success: "bg-success-soft text-success",
   warn: "bg-warn-soft text-warn",
   danger: "bg-danger-soft text-danger",
+  info: "bg-research-soft text-research-strong",
+  testing: "bg-testing-soft text-testing-strong",
+  mentor: "bg-mentor-soft text-mentor-strong",
 };
 
 export function Badge({ tone = "neutral", children, className }: { tone?: keyof typeof badgeTones; children: ReactNode; className?: string }) {
@@ -149,7 +197,7 @@ export function Field({
 }
 
 const inputCls =
-  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-soft/60 focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-200 disabled:opacity-60";
+  "w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-soft/60 focus:outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-200/70 disabled:opacity-60";
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cn(inputCls, "h-10", className)} {...rest} />;

@@ -9,7 +9,7 @@ import {
   eventDurationLabel,
 } from "../../lib/eventsRules";
 import { eventPosterPublicUrl } from "../../lib/api";
-import { demoEventPosterUrl } from "../../lib/eventsDemo";
+import { demoEventPosterUrl, DEMO_EVENT_ID } from "../../lib/eventsDemo";
 
 /** Poster URL resolution lives in one place: the demo event uses the bundled
  * fictional asset; real events use their storage public URL. */
@@ -104,7 +104,7 @@ export default function EventCard({
 
         {children /* actions, e.g. edit controls */}
         <Link
-          to={isDemo ? "/app/events/demo-inter-college-innovation-hackathon" : `/app/events/${ev.id}`}
+          to={isDemo ? `/events/${DEMO_EVENT_ID}` : `/events/${ev.id}`}
           className="mt-3 inline-flex items-center justify-center rounded-lg border border-line px-3 py-2 text-[13px] font-semibold text-brand-700 transition-colors hover:border-brand-400 hover:bg-brand-50"
         >
           View details

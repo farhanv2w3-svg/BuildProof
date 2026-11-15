@@ -10,7 +10,7 @@ import { z } from "zod";
 type FormValues = z.infer<typeof profileSchema>;
 
 export default function ProfilePage() {
-  const { profile, user } = useAuth();
+  const { profile, user, refresh } = useAuth();
   const supabase = getSupabase();
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
@@ -47,6 +47,9 @@ export default function ProfilePage() {
       setErr(error.message);
       return;
     }
+    // A13: refresh the AuthContext so the saved profile shows everywhere
+    // (landing header, dashboards) immediately — no logout/login needed.
+    await refresh().catch(() => undefined);
     setOk("Profile saved.");
   };
 

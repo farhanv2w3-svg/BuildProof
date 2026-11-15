@@ -29,7 +29,37 @@ export default function PrivacyPage() {
         contact details and interviewees' identities are never published.
       </P>
 
-      <H>Interview data & consent</H>
+      <H>EventSpace events, submissions and showcases</H>
+      <P>
+        For events run through EventSpace, the information an organiser publishes about an event
+        (title, description, schedule, rules, awards, contact details they provide) is public.
+        When you register, your registration and your answers to the organiser's registration
+        questions are visible to that event's organisers, to you, and to members of your own team
+        if you participate as a team.
+      </P>
+      <P>
+        Project submissions and their attached files are private. They are visible only to the
+        submitting participant or team, that event's organisers, and judges who are explicitly
+        assigned to the submission. Submission files are stored in a private storage bucket and
+        are served only through short-lived signed links.
+      </P>
+      <P>
+        Judges' scores and their private notes are not shown to other participants. Organisers can
+        see evaluation summaries and, where the organiser has enabled feedback visibility, the
+        feedback a judge chose to share. A submitted project is snapshotted at submission time and
+        that snapshot is what judges see; edits afterwards create a new version rather than
+        replacing the judged copy.
+      </P>
+      <P>
+        Public showcases and results appear only when the project owner has approved the showcase
+        content and the organiser publishes it. Only the fields chosen for publication (title,
+        summary, team attribution the team itself listed, and any public demo/code links) appear
+        there — never private files, judge notes, or personal contact details. Event announcements
+        are delivered as in-app notifications to registered participants; we do not send them by
+        SMS and there is no bulk email delivery configured for this feature.
+      </P>
+
+      <H>Interview data &amp; consent</H>
       <P>
         Our programme design requires that fieldwork section be conducted only with consenting
         adults who are told they may stop at any time. Participation labels are anonymised at
@@ -38,7 +68,15 @@ export default function PrivacyPage() {
         deletion requests.
       </P>
 
-      <H>Retention & deletion</H>
+      <H>Where your data lives</H>
+      <P>
+        BuildProof runs on third-party infrastructure: Supabase (PostgreSQL database,
+        authentication, file storage) and Cloudflare (application hosting). Your data is stored
+        there under the access controls described above. We do not sell data, and no advertising
+        or analytics trackers are embedded in the product.
+      </P>
+
+      <H>Retention &amp; deletion</H>
       <P>
         We intend to delete records when requested, within a reasonable operational window. As the
         product does not yet have a self-serve deletion flow, contact the platform admin. Audit

@@ -37,18 +37,23 @@ const stages = [
 export default function HowItWorksPage() {
   return (
     <div className="mx-auto w-full max-w-4xl px-4 py-14 sm:px-6">
-      <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-brand-600">The BuildProof process</p>
+      <p className="kicker">The BuildProof process</p>
       <h1 className="display-title mt-2 text-3xl sm:text-4xl">From real problems to proven skills.</h1>
       <p className="mt-4 max-w-2xl text-[15px] leading-relaxed text-ink-soft">
         Six stages with real persistence, real reviews and real access control. Here's exactly what
         happens at each stage — and what stays private.
       </p>
 
-      <ol className="mt-10 space-y-4">
+      <ol className="relative mt-10 space-y-4">
+        {/* Proof-trail rail connecting stage nodes */}
+        <div aria-hidden className="absolute bottom-6 left-[23px] top-6 w-px border-l-2 border-dashed border-brand-300 sm:left-[23px]" />
         {stages.map((s) => (
-          <li key={s.n} className="rounded-card border border-line bg-surface p-5 shadow-card">
+          <li key={s.n} className="relative rounded-card border border-line bg-surface p-5 pl-6 shadow-card transition-[border-color,box-shadow] duration-200 hover:border-brand-300 hover:shadow-lift sm:pl-16">
+            <span className="absolute left-4 top-1/2 hidden -translate-y-1/2 sm:flex sm:left-[5px] h-9 w-9 items-center justify-center rounded-full border-4 border-canvas bg-brand-700 font-display text-[14px] font-extrabold text-white">
+              {s.n}
+            </span>
             <div className="flex items-start gap-4">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-600 font-display text-[15px] font-extrabold text-white">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-100 font-display text-[15px] font-extrabold text-brand-700 sm:hidden">
                 {s.n}
               </span>
               <div>

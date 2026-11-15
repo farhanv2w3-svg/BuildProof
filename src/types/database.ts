@@ -191,6 +191,7 @@ export interface Interview {
 export interface EvidenceAttachment {
   id: string;
   team_id: string;
+  proof_card_id: string | null;
   stage: EvidenceStage;
   uploaded_by: string | null;
   file_name: string;
@@ -276,6 +277,7 @@ export interface ProofCard {
   published_at: string | null;
   published_by: string | null;
   reviewer_notes: string | null;
+  archived: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -314,6 +316,32 @@ export interface Notification {
   link: string | null;
   read: boolean;
   created_at: string;
+}
+
+export interface FeatureAnnouncement {
+  id: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+  destination_route: string | null;
+  status: "draft" | "scheduled" | "published" | "archived";
+  publish_at: string | null;
+  published_at: string | null;
+  author_id: string | null;
+  notification_created: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationPreferences {
+  user_id: string;
+  in_app_enabled: boolean;
+  push_enabled: boolean;
+  feature_announcements: boolean;
+  team_notifications: boolean;
+  project_notifications: boolean;
+  event_notifications: boolean;
+  updated_at: string;
 }
 
 export interface AuditLog {
@@ -402,7 +430,16 @@ export type ReviewAssignmentStatus = "assigned" | "in_progress" | "completed";
 export type ReviewVerdict = "accepted" | "needs_revision" | "rejected" | "inconclusive";
 
 export type ContributionKind = "project_work" | "community" | "company_assignment" | "internship" | "employment" | "founding";
-export type ReportSubjectType = "problem" | "solution" | "hardware_project" | "company_project" | "opportunity" | "comment";
+export type ReportSubjectType =
+  | "problem"
+  | "solution"
+  | "hardware_project"
+  | "company_project"
+  | "opportunity"
+  | "comment"
+  | "es_event"
+  | "es_submission"
+  | "es_showcase";
 export type ReportReason = "misleading" | "inappropriate" | "spam" | "other";
 export type ReportStatus = "open" | "reviewed" | "actioned" | "dismissed";
 export type MilestoneStatus = "pending" | "in_progress" | "done" | "late";
@@ -551,6 +588,8 @@ export interface SolutionTransferAgreement {
   status: AgreementStatus;
   agreed_by_creator: boolean;
   agreed_by_other: boolean;
+  agreed_by_creator_at?: string | null;
+  agreed_by_other_at?: string | null;
   executed_at: string | null;
   created_at: string;
 }
@@ -606,7 +645,18 @@ export interface HardwareProject {
   demo_url: string | null;
   readiness_class: HardwareReadiness;
   ip_status: HardwareIPStatus;
+  lifecycle_status?: "idea" | "in_progress" | "prototype" | "testing" | "completed";
+  visibility?: "private" | "restricted" | "public";
+  published_at?: string | null;
   created_by: string | null;
+  created_at: string;
+}
+
+export interface TeamMessage {
+  id: string;
+  team_id: string;
+  sender_id: string;
+  body: string;
   created_at: string;
 }
 
@@ -727,4 +777,413 @@ export interface EventRow {
   status: EventStatus;
   created_at: string;
   updated_at: string;
+}
+
+/* ------------------------------------------------------------------ */
+/*  0015 — EventSpace module (es_*)                                    */
+/* ------------------------------------------------------------------ */
+
+export type EsEventCategory =
+  | "hackathon"
+  | "ideathon"
+  | "coding_competition"
+  | "project_exhibition"
+  | "workshop"
+  | "conference"
+  | "symposium"
+  | "robotics_hardware"
+  | "other";
+
+export type EsEventFormat = "online" | "offline" | "hybrid";
+export type EsEventVisibility = "public" | "unlisted" | "private";
+export type EsParticipation = "individual" | "team" | "both";
+
+export type EsEventStatus =
+  | "draft"
+  | "published"
+  | "completed"
+  | "cancelled"
+  | "archived";
+
+export type EsRegistrationStatus =
+  | "registered"
+  | "pending"
+  | "waitlisted"
+  | "withdrawn"
+  | "cancelled"
+  | "rejected";
+
+export type EsSubmissionStatus =
+  | "draft"
+  | "submitted"
+  | "under_review"
+  | "revision_requested"
+  | "resubmitted"
+  | "shortlisted"
+  | "accepted"
+  | "rejected"
+  | "withdrawn";
+
+export type EsSubmissionFileKind = "presentation" | "document" | "screenshot" | "supporting";
+
+export type EsAwardCategory =
+  | "winner"
+  | "runner_up"
+  | "second_runner_up"
+  | "best_innovation"
+  | "best_prototype"
+  | "best_research"
+  | "special_recognition"
+  | "custom";
+
+export type EsRoundType = "submission" | "interview" | "presentation" | "review" | "other";
+export type EsStaffRole = "manager" | "judge";
+export type EsEvaluationRecommendation = "none" | "shortlist" | "accept" | "reject";
+export type EsShowcaseStatus =
+  | "draft"
+  | "pending_approval"
+  | "owner_approved"
+  | "published"
+  | "unpublished";
+
+/** Organiser-configured registration question. */
+export interface EsRegQuestion {
+  label: string;
+  type: "text" | "textarea" | "select";
+  options?: string[];
+  required: boolean;
+}
+
+/** Organiser-configured submission field. */
+export interface EsSubmissionField {
+  key: string;
+  label: string;
+  required: boolean;
+}
+
+/** Rubric criterion (weights must total 100). */
+export interface EsCriterion {
+  name: string;
+  description?: string;
+  weight: number;
+}
+
+export interface EsEventOrganizerRow {
+  user_id: string;
+  org_name: string;
+  official_email: string;
+  position: string;
+  website: string | null;
+  reason: string;
+  verification_notes: string | null;
+  status: "pending" | "approved" | "rejected" | "suspended";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EsEventRow {
+  id: string;
+  slug: string;
+  created_by: string;
+  title: string;
+  category: EsEventCategory;
+  short_description: string;
+  full_description: string | null;
+  cover_path: string | null;
+  poster_path: string | null;
+  logo_path: string | null;
+  institution_name: string;
+  edition: string | null;
+  theme: string | null;
+  official_url: string | null;
+  format: EsEventFormat;
+  venue: string | null;
+  city: string | null;
+  state_name: string | null;
+  country: string | null;
+  timezone: string;
+  online_instructions: string | null;
+  map_url: string | null;
+  starts_at: string;
+  ends_at: string;
+  registration_opens_at: string | null;
+  registration_closes_at: string | null;
+  submission_opens_at: string | null;
+  submission_deadline: string | null;
+  judging_starts_at: string | null;
+  judging_ends_at: string | null;
+  results_at: string | null;
+  resubmit_until: string | null;
+  eligibility_levels: string[];
+  eligibility_years: string[] | null;
+  eligibility_departments: string[] | null;
+  eligibility_institutions: string[] | null;
+  eligibility_regions: string[] | null;
+  age_note: string | null;
+  participation: EsParticipation;
+  min_team_size: number;
+  max_team_size: number;
+  registration_enabled: boolean;
+  registration_capacity: number | null;
+  registration_approval: boolean;
+  reg_questions: EsRegQuestion[];
+  registration_note: string | null;
+  confirmation_message: string | null;
+  rules: string | null;
+  submission_requirements: string | null;
+  originality_terms: string | null;
+  ip_terms: string | null;
+  late_submission_terms: string | null;
+  disqualification_terms: string | null;
+  contact_name: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  faq: Array<{ q: string; a: string }>;
+  submission_fields: EsSubmissionField[];
+  evaluation_enabled: boolean;
+  evaluation_criteria: EsCriterion[];
+  feedback_visible: boolean;
+  anonymous_judging: boolean;
+  status: EsEventStatus;
+  visibility: EsEventVisibility;
+  registration_open: boolean;
+  submission_open: boolean;
+  judging_open: boolean;
+  results_published: boolean;
+  featured: boolean;
+  published_at: string | null;
+  cancelled_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EsEventStaffRow {
+  id: string;
+  event_id: string;
+  user_id: string;
+  role: EsStaffRole;
+  granted_by: string;
+  created_at: string;
+}
+
+export interface EsRoundRow {
+  id: string;
+  event_id: string;
+  name: string;
+  description: string | null;
+  round_type: EsRoundType;
+  opens_at: string | null;
+  closes_at: string | null;
+  submission_config: Record<string, unknown>;
+  evaluation_config: Record<string, unknown>;
+  advancement: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface EsEventTeamRow {
+  id: string;
+  event_id: string;
+  name: string;
+  leader_user_id: string;
+  created_by: string;
+  created_at: string;
+}
+
+export interface EsEventTeamMemberRow {
+  id: string;
+  team_id: string;
+  user_id: string;
+  member_role: "leader" | "member";
+  status: "invited" | "active" | "declined" | "left" | "removed";
+  invited_by: string;
+  responded_at: string | null;
+  created_at: string;
+}
+
+export interface EsRegistrationRow {
+  id: string;
+  event_id: string;
+  user_id: string;
+  participation_type: "individual" | "team";
+  team_id: string | null;
+  status: EsRegistrationStatus;
+  answers: Array<{ label: string; answer: string }>;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EsSubmissionRow {
+  id: string;
+  event_id: string;
+  round_id: string | null;
+  owner_type: "individual" | "team";
+  owner_user_id: string;
+  team_id: string | null;
+  status: EsSubmissionStatus;
+  data: Record<string, unknown>;
+  snapshot: Record<string, unknown> | null;
+  snapshot_version: number;
+  declarations: {
+    originality?: string;
+    rights?: string;
+    rules_ack?: string;
+    visibility_consent?: string;
+    [key: string]: unknown;
+  };
+  linked_project_kind: "solution" | "hardware_project" | null;
+  linked_project_id: string | null;
+  submitted_at: string | null;
+  revision_reason: string | null;
+  review_note: string | null;
+  shortlisted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EsSubmissionSnapshotRow {
+  id: string;
+  submission_id: string;
+  version: number;
+  data: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface EsSubmissionFileRow {
+  id: string;
+  submission_id: string;
+  storage_path: string;
+  object_key: string;
+  file_name: string;
+  mime_type: string;
+  size_bytes: number;
+  kind: EsSubmissionFileKind;
+  uploaded_by: string;
+  created_at: string;
+}
+
+export interface EsJudgeAssignmentRow {
+  id: string;
+  event_id: string;
+  judge_user_id: string;
+  submission_id: string;
+  status: "assigned" | "in_progress" | "completed" | "removed";
+  assigned_by: string;
+  created_at: string;
+}
+
+export interface EsEvaluationRow {
+  id: string;
+  assignment_id: string;
+  scores: Array<{ criterion: string; score: number | null }>;
+  total_score: number | null;
+  private_notes: string | null;
+  feedback: string | null;
+  recommendation: EsEvaluationRecommendation | null;
+  is_draft: boolean;
+  submitted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EsAwardRow {
+  id: string;
+  event_id: string;
+  name: string;
+  description: string | null;
+  category: EsAwardCategory;
+  prize_text: string | null;
+  certificate_text: string | null;
+  sponsor: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface EsResultRow {
+  id: string;
+  event_id: string;
+  award_id: string;
+  submission_id: string;
+  position: number | null;
+  note: string | null;
+  published: boolean;
+  published_at: string | null;
+  created_by: string;
+  created_at: string;
+}
+
+export interface EsAnnouncementRow {
+  id: string;
+  event_id: string;
+  title: string;
+  body: string;
+  audience: "participants" | "judges" | "all";
+  created_by: string;
+  created_at: string;
+}
+
+export interface EsShowcaseRow {
+  id: string;
+  event_id: string;
+  submission_id: string;
+  status: EsShowcaseStatus;
+  approved_title: string;
+  approved_summary: string;
+  approved_problem: string | null;
+  approved_solution: string | null;
+  team_attribution: Array<{ name: string; role?: string }>;
+  image_path: string | null;
+  approved_demo_url: string | null;
+  approved_github_url: string | null;
+  owner_approved_by: string | null;
+  owner_approved_at: string | null;
+  published_by: string | null;
+  published_at: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Row shape of the es_public_showcases view. */
+export interface EsPublicShowcaseRow {
+  id: string;
+  event_id: string;
+  submission_id: string;
+  approved_title: string;
+  approved_summary: string;
+  approved_problem: string | null;
+  approved_solution: string | null;
+  team_attribution: Array<{ name: string; role?: string }>;
+  image_path: string | null;
+  approved_demo_url: string | null;
+  approved_github_url: string | null;
+  published_at: string | null;
+  event_title: string;
+  event_slug: string;
+  event_category: EsEventCategory;
+}
+
+/** Row shape of the es_public_results view. */
+export interface EsPublicResultRow {
+  id: string;
+  event_id: string;
+  award_id: string;
+  submission_id: string;
+  position: number | null;
+  award_name: string;
+  award_category: EsAwardCategory;
+  event_title: string;
+  event_slug: string;
+  approved_title: string | null;
+  approved_summary: string | null;
+  approved_demo_url: string | null;
+  approved_github_url: string | null;
+  team_attribution: Array<{ name: string; role?: string }> | null;
+  image_path: string | null;
+  showcase_status: EsShowcaseStatus | null;
 }

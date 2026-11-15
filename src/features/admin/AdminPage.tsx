@@ -7,6 +7,7 @@ import {
   grantRole,
   revokeRole,
   findUserIdByEmail,
+  fetchInstitutions,
   createInstitution,
   listAllCardsForReview,
   updateCard,
@@ -28,8 +29,10 @@ import {
 import { useAuth } from "../../lib/auth";
 import { StatusBadge } from "../problems/ProblemsPage";
 import { titleize } from "../../lib/utils";
-import { OrganizationVerificationPanel, ContentReportsPanel, ReviewVerificationPanel } from "./DomainsAdminPanels";
+import { OrganizationVerificationPanel, ContentReportsPanel, ReviewVerificationPanel, ReviewerAssignmentPanel } from "./DomainsAdminPanels";
 import type { AppRole, ProofCard, Problem } from "../../types/database";
+import { FeatureAnnouncementsPanel, RegistrationAlertsPanel } from "./NotificationAdminPanels";
+import { EventspaceOrganizersPanel } from "./EventspaceAdminPanels";
 
 const GRANTABLE: AppRole[] = [
   "facilitator",
@@ -53,14 +56,18 @@ export default function AdminPage() {
       />
       {err && <ErrorBanner message={err} />}
       <div className="space-y-6">
+        <EventspaceOrganizersPanel />
         <OrganizationVerificationPanel />
         <ProblemScreeningPanel />
         <ProofCardAdminPanel />
+        <ReviewerAssignmentPanel />
         <ReviewVerificationPanel />
         <ContentReportsPanel />
         <RolesPanel currentUserId={user?.id ?? ""} />
         <InstitutionsPanel />
         <AuditLogPanel />
+        <FeatureAnnouncementsPanel />
+        <RegistrationAlertsPanel />
       </div>
     </div>
   );
@@ -174,6 +181,7 @@ function ProofCardAdminPanel() {
                       onClick={async () => {
                         try {
                           await updateCard(c.id, { visibility: "private", review_status: "approved" });
+                          await writeAuditLog(null, "proof_card.unpublish", "proof_card", c.id);
                           await qc.invalidateQueries();
                           setMsg("Card unpublished.");
                         } catch (e) {
@@ -198,13 +206,16 @@ function ProofCardAdminPanel() {
 
 function RolesPanel({ currentUserId }: { currentUserId: string }) {
   const { data: roles, isLoading } = useQuery({ queryKey: ["roles"], queryFn: () => listRoles() });
+  const { data: institutions } = useQuery({ queryKey: ["institutions"], queryFn: () => fetchInstitutions() });
   const qc = useQueryClient();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<AppRole>("facilitator");
-  const [institutionId] = useState<string>("");
+  const [institutionId, setInstitutionId] = useState<string>("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+
+  const needsInstitution = role === "institution_admin" || role === "faculty_coordinator";
 
   return (
     <Card>
@@ -222,6 +233,19 @@ function RolesPanel({ currentUserId }: { currentUserId: string }) {
               <option key={r} value={r}>{titleize(r)}</option>
             ))}
           </Select>
+          {needsInstitution && (
+            <Select
+              className="max-w-[240px]"
+              aria-label="Institution for this role"
+              value={institutionId}
+              onChange={(e) => setInstitutionId(e.target.value)}
+            >
+              <option value="">— Select institution —</option>
+              {(institutions ?? []).map((i) => (
+                <option key={i.id} value={i.id}>{i.name}{i.city ? ` · ${i.city}` : ""}</option>
+              ))}
+            </Select>
+          )}
           <Button
             loading={busy}
             onClick={async () => {
@@ -229,6 +253,10 @@ function RolesPanel({ currentUserId }: { currentUserId: string }) {
               setError(null);
               setOk(null);
               try {
+                if (needsInstitution && !institutionId) {
+                  setError("Select the institution this role is scoped to first.");
+                  return;
+                }
                 const uid = await findUserIdByEmail(email.trim().toLowerCase());
                 if (!uid) {
                   setError("No BuildProof account for that email. The person must sign up first.");
@@ -239,9 +267,10 @@ function RolesPanel({ currentUserId }: { currentUserId: string }) {
                   return;
                 }
                 await grantRole(uid, role, institutionId || null, currentUserId);
-                await writeAuditLog(currentUserId, "role.grant", "user", uid, { role, institutionId });
-                setOk(`Role ${role} granted to user ${uid.slice(0, 8)}… form details appear in the roles list.`);
+                await writeAuditLog(currentUserId, "role.grant", "user", uid, { role, institution_id: institutionId || null });
+                setOk(`Role ${role}${needsInstitution ? " (institution-scoped)" : ""} granted to user ${uid.slice(0, 8)}… — details appear in the roles list.`);
                 setEmail("");
+                setInstitutionId("");
                 await qc.invalidateQueries({ queryKey: ["roles"] });
               } catch (e) {
                 setError(errMessage(e));
@@ -295,8 +324,7 @@ function RolesPanel({ currentUserId }: { currentUserId: string }) {
 /* --------------------------- institutions panel --------------------------- */
 
 function InstitutionsPanel() {
-  const { data } = useQuery({ queryKey: ["institutions"], queryFn: () => listProblems() });
-  void data;
+  const { data: institutions, isLoading } = useQuery({ queryKey: ["institutions"], queryFn: () => fetchInstitutions() });
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [busy, setBusy] = useState(false);
@@ -332,6 +360,26 @@ function InstitutionsPanel() {
             Register
           </Button>
         </div>
+      </div>
+      <div className="border-t border-line px-5 py-4">
+        {isLoading ? (
+          <LoadingBlock />
+        ) : (
+          <ul className="space-y-2">
+            {(institutions ?? []).map((i) => (
+              <li key={i.id} className="rounded-lg border border-line bg-canvas px-3 py-2 text-[13px]">
+                <p className="font-semibold">{i.name}</p>
+                {i.city && <p className="text-[11.5px] text-ink-soft">{i.city}</p>}
+              </li>
+            ))}
+            {(institutions ?? []).length === 0 && (
+              <p className="text-[13px] text-ink-soft">
+                No institutions registered yet — create the first one above, then grant an
+                institution_admin role (Role management) so cohorts can be opened there.
+              </p>
+            )}
+          </ul>
+        )}
       </div>
     </Card>
   );

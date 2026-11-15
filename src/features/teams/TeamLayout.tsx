@@ -21,6 +21,8 @@ const tabs = [
   { to: "feasibility", label: "Feasibility" },
   { to: "tests", label: "Prototype & testing" },
   { to: "plan", label: "Plan & tasks" },
+  { to: "solutions", label: "Solutions" },
+  { to: "chat", label: "Team chat" },
   { to: "roles", label: "Team roles" },
 ];
 
@@ -168,6 +170,7 @@ function InvitesPanel({ teamId }: { teamId: string }) {
   const [email, setEmail] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const me = (members ?? []).find((m) => m.user_id === user?.id);
   const isAcceptedMember = me?.status === "accepted";
@@ -193,6 +196,7 @@ function InvitesPanel({ teamId }: { teamId: string }) {
     <section className="mt-6">
       <h3 className="mb-2 text-[14px] font-bold">Invite a teammate</h3>
       {err && <div className="mb-2"><ErrorBanner message={err} /></div>}
+      {copied && <p className="mb-2 text-[12.5px] font-medium text-success" role="status">Invite link copied — share it with your teammate.</p>}
       <div className="flex flex-wrap gap-2">
         <Input className="max-w-xs" type="email" placeholder="teammate@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         <Button onClick={invite} loading={busy} disabled={email.trim().length < 5}>Create invite</Button>
@@ -203,25 +207,60 @@ function InvitesPanel({ teamId }: { teamId: string }) {
         {pending.length > 0 && (
           <>
             <br />
-            <strong className="text-ink">Pending invites:</strong>{" "}
-            {pending.map((i) => (
-              <span key={i.id} className="mr-2 inline-flex items-center gap-1">
-                <code className="rounded bg-canvas px-1 py-0.5 text-[11px]">{`/app/invites/${i.token.slice(0, 8)}…`}</code>
-                <button
-                  className="text-[11px] font-semibold text-danger hover:underline"
-                  onClick={async () => {
-                    await revokeTeamInvite(i.id);
-                    await qc.invalidateQueries({ queryKey: ["teamInvites", teamId] });
-                  }}
-                >
-                  revoke
-                </button>
-              </span>
-            ))}
+            <strong className="text-ink">Pending invites:</strong>
           </>
         )}
       </p>
+      {pending.length > 0 && (
+        <ul className="mt-1 max-w-xl space-y-1.5">
+          {pending.map((i) => (
+            <li key={i.id} className="rounded-lg border border-line bg-surface px-2.5 py-1.5">
+              <InviteRow
+                token={i.token}
+                onRevoke={async () => {
+                  await revokeTeamInvite(i.id);
+                  await qc.invalidateQueries({ queryKey: ["teamInvites", teamId] });
+                }}
+                onCopied={() => { setCopied(true); window.setTimeout(() => setCopied(false), 2500); }}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
+  );
+}
+
+function InviteRow({ token, onRevoke, onCopied }: { token: string; onRevoke: () => Promise<void>; onCopied: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const url = `${window.location.origin}/app/invites/${token}`;
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <code className="min-w-0 break-all rounded bg-canvas px-1 py-0.5 text-[11px]">{url}</code>
+      <span className="flex shrink-0 items-center gap-1.5">
+        <button
+          className="text-[11px] font-semibold text-brand-700 hover:underline"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(url);
+              onCopied();
+            } catch { /* clipboard unavailable: the full link is visible directly above */ }
+          }}
+        >
+          copy link
+        </button>
+        <button
+          className="text-[11px] font-semibold text-danger hover:underline disabled:opacity-50"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try { await onRevoke(); } finally { setBusy(false); }
+          }}
+        >
+          revoke
+        </button>
+      </span>
+    </div>
   );
 }
 

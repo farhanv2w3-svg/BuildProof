@@ -1,0 +1,5 @@
+[functions.telegram-registration-alert]
+verify_jwt = false
+
+[functions.send-web-push]
+verify_jwt = false

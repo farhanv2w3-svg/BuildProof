@@ -13,6 +13,7 @@ import { Badge, Button, Card, CardHeader, EmptyState, ErrorBanner, Field, InfoNo
 import { canSetTier, isPubliclyVisible } from "../../lib/rbac";
 import type { AppRole } from "../../types/database";
 import { formatDate, titleize } from "../../lib/utils";
+import { AttachmentsCard } from "../evidence/AttachmentsCard";
 
 export default function ProofCardDetailPage() {
   const { proofCardId } = useParams();
@@ -84,6 +85,15 @@ export default function ProofCardDetailPage() {
         </Card>
       )}
 
+      {!card.archived && (
+        <AttachmentsCard
+          teamId={card.team_id}
+          userId={user!.id}
+          stage="validation"
+          proofCardId={card.id}
+        />
+      )}
+
       <WorkflowPanels card={card} userId={user!.id} roles={roles} qc={qc} />
 
       <InfoNote>
@@ -103,7 +113,7 @@ function StateRow({ card }: { card: Awaited<ReturnType<typeof fetchCard>> }) {
         Tier {card.tier} — {card.tier === 1 ? "self-reported" : card.tier === 2 ? "evidence reviewed" : "confirmed by problem owner"}
       </Badge>
       <ReviewBadge status={card.review_status} />
-      <Badge tone={isPublic ? "brand" : "neutral"}>{isPublic ? "Publicly visible" : "Private"}</Badge>
+      <Badge tone={card.archived ? "neutral" : isPublic ? "brand" : "neutral"}>{card.archived ? "Archived" : isPublic ? "Publicly visible" : "Private"}</Badge>
       <span className="text-[12px] text-ink-soft">
         Last updated {formatDate(card.updated_at)}
       </span>
@@ -164,13 +174,34 @@ function WorkflowPanels({
   return (
     <div className="space-y-5">
       {err && <ErrorBanner message={err} />}
+      <Card>
+        <CardHeader
+          title={card.archived ? "Restore Proof Card" : "Archive Proof Card"}
+          sub={card.archived ? "Restore this card to active listings without changing its evidence or history." : "Archiving preserves the card and all evidence but removes it from active listings and public access."}
+        />
+        <div className="px-5 pb-5">
+          <Button
+            variant="secondary"
+            loading={act.isPending}
+            onClick={async () => {
+              try {
+                await act.mutateAsync({ values: { archived: !card.archived }, note: true });
+                setOkMsg(card.archived ? "Proof Card restored." : "Proof Card archived.");
+              } catch { /* handled */ }
+            }}
+          >
+            {card.archived ? "Restore card" : "Archive card"}
+          </Button>
+        </div>
+      </Card>
       {okMsg && <SuccessBanner message={okMsg} />}
 
       {isTeamEditable && (
         <Card>
           <CardHeader title="Team actions" sub="Edit, submit for review, add skills." />
           <div className="px-5 pb-5">
-            <div className="flex flex-wrap gap-2">
+            <EditCardForm card={card} onSaved={(message) => { setOkMsg(message); void qc.invalidateQueries({ queryKey: ["card", card.id] }); }} />
+            <div className="mt-3 flex flex-wrap gap-2">
               <Button
                 onClick={async () => {
                   try {
@@ -259,6 +290,56 @@ function WorkflowPanels({
           </div>
         </Card>
       )}
+    </div>
+  );
+}
+
+function EditCardForm({ card, onSaved }: { card: NonNullable<Awaited<ReturnType<typeof fetchCard>>>; onSaved: (message: string) => void }) {
+  const [values, setValues] = useState({
+    title: card.title,
+    problem_title: card.problem_title,
+    problem_summary: card.problem_summary,
+    validation_summary: card.validation_summary,
+    feasibility_summary: card.feasibility_summary ?? "",
+    built_summary: card.built_summary ?? "",
+    results_limitations: card.results_limitations ?? "",
+  });
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const save = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await updateCard(card.id, {
+        ...values,
+        feasibility_summary: values.feasibility_summary.trim() || null,
+        built_summary: values.built_summary.trim() || null,
+        results_limitations: values.results_limitations.trim() || null,
+      });
+      setEditing(false);
+      onSaved("Proof Card changes saved.");
+    } catch (e) {
+      setError(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!editing) return <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>Edit card details</Button>;
+  return (
+    <div className="grid gap-3 rounded-lg border border-line bg-canvas p-3 sm:grid-cols-2">
+      {error && <div className="sm:col-span-2"><ErrorBanner message={error} /></div>}
+      <Field label="Title" className="sm:col-span-2"><Input value={values.title} maxLength={180} onChange={(e) => setValues({ ...values, title: e.target.value })} /></Field>
+      <Field label="Problem investigated" className="sm:col-span-2"><Input value={values.problem_title} maxLength={180} onChange={(e) => setValues({ ...values, problem_title: e.target.value })} /></Field>
+      <Field label="Problem summary" className="sm:col-span-2"><Textarea value={values.problem_summary} maxLength={3000} rows={3} onChange={(e) => setValues({ ...values, problem_summary: e.target.value })} /></Field>
+      <Field label="Validation summary" className="sm:col-span-2"><Textarea value={values.validation_summary} maxLength={4000} rows={3} onChange={(e) => setValues({ ...values, validation_summary: e.target.value })} /></Field>
+      <Field label="Feasibility findings"><Textarea value={values.feasibility_summary} maxLength={3000} rows={3} onChange={(e) => setValues({ ...values, feasibility_summary: e.target.value })} /></Field>
+      <Field label="What was built or tested"><Textarea value={values.built_summary} maxLength={3000} rows={3} onChange={(e) => setValues({ ...values, built_summary: e.target.value })} /></Field>
+      <Field label="Results and limitations" className="sm:col-span-2"><Textarea value={values.results_limitations} maxLength={3000} rows={3} onChange={(e) => setValues({ ...values, results_limitations: e.target.value })} /></Field>
+      <div className="flex gap-2 sm:col-span-2">
+        <Button loading={busy} onClick={() => void save()} disabled={!values.title.trim() || !values.problem_title.trim() || values.problem_summary.trim().length < 20 || values.validation_summary.trim().length < 20}>Save changes</Button>
+        <Button variant="secondary" onClick={() => setEditing(false)}>Cancel</Button>
+      </div>
     </div>
   );
 }

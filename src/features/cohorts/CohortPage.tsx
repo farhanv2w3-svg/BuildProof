@@ -10,15 +10,21 @@ import {
   findUserIdByEmail,
   removeCohortMember,
   updateCohortStatus,
+  createTeam,
+  addUserToTeam,
+  listProblems,
+  fetchMentorAssignments,
+  assignMentor,
+  setMentorAssignmentActive,
 } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
 import { Badge, Button, Card, CardHeader, EmptyState, LoadingBlock, PageTitle, Input, Select, ErrorBanner } from "../../components/ui";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { titleize } from "../../lib/utils";
 
 export default function CohortPage() {
   const { cohortId } = useParams();
-  const { user } = useAuth();
+  const { user, roles } = useAuth();
 
   const { data: cohort, isLoading } = useQuery({
     queryKey: ["cohort", cohortId],
@@ -48,6 +54,9 @@ export default function CohortPage() {
 
   const myMembership = (members ?? []).find((m) => m.user_id === user?.id);
   const isProposed = myMembership?.status === "proposed";
+  const isStaff = (["institution_admin", "faculty_coordinator", "platform_admin"] as const).some((r) =>
+    roles.includes(r)
+  );
 
   return (
     <div>
@@ -84,7 +93,7 @@ export default function CohortPage() {
 
       <section className="mt-8">
         <CardHeader title="Teams" sub={`${(teams ?? []).length} team(s) in this cohort`} />
-        {(teams ?? []).length === 0 ? (
+        {myMembership?.status === "active" && <CreateTeamForm cohortId={cohort.id} />}        {(teams ?? []).length === 0 ? (
           <EmptyState title="No teams yet" description="Teams are created by cohort staff or students once a cohort is active." />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -106,12 +115,224 @@ export default function CohortPage() {
           </div>
         )}
       </section>
+
+      {/* B3 — mentor assignment: staff assign mentors to this cohort's teams by
+          email. The database insert policy ("cohort staff assign mentors") is
+          the real gate; this panel is the interface that was missing. */}
+      {isStaff && <MentorsPanel cohortId={cohort.id} teams={teams ?? []} />}
     </div>
   );
 }
 
-function teamStatusLabel(s: string) {  const labels: Record<string, string> = {
-    forming: "Forming",
+/** B1 — Team creation UI. The database (migration 0001) enforces the real
+ * eligibility rules: the creator must be an active member of this cohort and
+ * can only name themselves as creator. The form mirrors those rules honestly —
+ * it shows for active members only, validates the name bounds (2–120 chars),
+ * and offers the currently approved problems as optional starting points. */
+function CreateTeamForm({ cohortId }: { cohortId: string }) {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [problemId, setProblemId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const { data: problems } = useQuery({
+    queryKey: ["approvedProblems"],
+    queryFn: listProblems,
+    enabled: open,
+    select: (rows) => rows.filter((p) => p.status === "approved"),
+  });
+
+  const create = async () => {
+    setError(null);
+    const trimmed = name.trim();
+    if (trimmed.length < 2 || trimmed.length > 120) {
+      setError("Team name must be 2–120 characters.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const team = await createTeam({
+        cohort_id: cohortId,
+        name: trimmed,
+        problem_id: problemId || null,
+        created_by: user!.id,
+      });
+      // The creator joins their own team immediately (self-add is allowed by
+      // the team_members insert policy when the cohort matches).
+      await addUserToTeam(team.id, user!.id, "student", "accepted");
+      await qc.invalidateQueries({ queryKey: ["cohortTeams", cohortId] });
+      setOpen(false);
+      setName("");
+      setProblemId("");
+      navigate(`/app/teams/${team.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Team creation failed. Ask cohort staff if this persists.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <div className="mb-3">
+        <Button size="sm" onClick={() => { setOpen(true); setError(null); }}>
+          Create a team
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Card className="mb-4 p-4">
+      <p className="text-[13px] font-semibold">Create a team in this cohort</p>
+      <p className="mt-1 text-[12px] text-ink-soft">
+        You are an active member of this cohort, so you can start a team — you'll be added as its
+        first member automatically. Picking a problem is optional; a team can choose later.
+      </p>
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="mb-1 block text-[12px] font-semibold text-ink">Team name</span>
+          <Input
+            className="max-w-xs"
+            placeholder="e.g. Wastemap Sprints"
+            value={name}
+            maxLength={120}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1 block text-[12px] font-semibold text-ink">Start from a problem (optional)</span>
+          <Select className="max-w-xs" value={problemId} onChange={(e) => setProblemId(e.target.value)}>
+            <option value="">— Choose later —</option>
+            {(problems ?? []).map((p) => (
+              <option key={p.id} value={p.id}>{p.title}</option>
+            ))}
+          </Select>
+        </label>
+        <Button onClick={create} loading={busy}>Create team</Button>
+        <Button variant="secondary" onClick={() => { setOpen(false); setError(null); }}>Cancel</Button>
+      </div>
+      {error && <div className="mt-3 max-w-xl"><ErrorBanner message={error} /></div>}
+    </Card>
+  );
+}
+
+/** B3 — mentor assignment panel for cohort staff. Mentors are looked up by
+ * email (find_user_id_by_email is staff-restricted). The database validates
+ * staff authority over the team; whether the person actually holds the mentor
+ * ROLE cannot be checked from the client (role rows are private), so the note
+ * below says so honestly. */
+function MentorsPanel({ cohortId, teams }: { cohortId: string; teams: Awaited<ReturnType<typeof fetchCohortTeams>> }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [teamId, setTeamId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const cohortTeamIds = new Set(teams.map((t) => t.id));
+  const { data: assignments } = useQuery({
+    queryKey: ["mentorAssignments", cohortId],
+    queryFn: () => fetchMentorAssignments(null),
+  });
+  const visible = (assignments ?? []).filter((a) => cohortTeamIds.has(a.team_id));
+
+  if (teams.length === 0) return null;
+
+  const assign = async () => {
+    setBusy(true);
+    setError(null);
+    setOk(null);
+    try {
+      const uid = await findUserIdByEmail(email.trim().toLowerCase());
+      if (!uid) {
+        setError("No BuildProof account found for that email. The mentor must sign up first.");
+        return;
+      }
+      await assignMentor(teamId, uid, user!.id);
+      setOk("Mentor assigned. They will see this team in their mentor workspace.");
+      setEmail("");
+      await qc.invalidateQueries({ queryKey: ["mentorAssignments", cohortId] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Assignment failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="mt-8">
+      <CardHeader title="Mentors" sub="Cohort staff connect mentors to specific teams. The database only allows staff of this cohort to assign." />
+      {error && <div className="mb-2 max-w-xl"><ErrorBanner message={error} /></div>}
+      {ok && <p className="mb-2 text-[12.5px] font-semibold text-success">{ok}</p>}
+      <Card className="p-4">
+        {visible.length === 0 ? (
+          <p className="text-[13px] text-ink-soft">No mentor assignments for this cohort's teams yet.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {visible.map((a) => {
+              const team = teams.find((t) => t.id === a.team_id);
+              return (
+                <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-[13px]">
+                  <span>
+                    <strong>{team?.name ?? "Team"}</strong>
+                    <span className="ml-2 text-[12px] text-ink-soft">mentor {a.mentor_id.slice(0, 8)}…</span>
+                  </span>
+                  <button
+                    className="text-[12px] font-semibold text-danger hover:underline"
+                    onClick={async () => {
+                      try {
+                        await setMentorAssignmentActive(a.id, false);
+                        await qc.invalidateQueries({ queryKey: ["mentorAssignments", cohortId] });
+                      } catch {
+                        // Revocation needs the mentor_assignment update policy from
+                        // the drafted repair migration; until it is applied the DB
+                        // rejects this — say so plainly instead of pretending.
+                        setError("Revoking needs the assignment-update policy (drafted migration) to be applied first.");
+                      }
+                    }}
+                  >
+                    revoke
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </Card>
+      <Card className="mt-3 p-4">
+        <p className="mb-2 text-[13px] font-semibold">Assign a mentor to a team</p>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-semibold text-ink">Mentor email</span>
+            <Input className="max-w-xs" type="email" placeholder="mentor@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </label>
+          <label className="block">
+            <span className="mb-1 block text-[12px] font-semibold text-ink">Team</span>
+            <Select className="max-w-xs" value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+              <option value="">— Select team —</option>
+              {teams.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </Select>
+          </label>
+          <Button onClick={assign} loading={busy} disabled={!teamId || email.trim().length < 5}>Assign mentor</Button>
+        </div>
+        <p className="mt-2 text-[12px] text-ink-soft">
+          Note: BuildProof cannot verify from here that this account holds the "mentor" role (role records
+          are visible only to platform admins). Coordination of who your mentors are happens outside the app.
+        </p>
+      </Card>
+    </section>
+  );
+}
+
+function teamStatusLabel(s: string) {  const labels: Record<string, string> = {    forming: "Forming",
     active: "In progress",
     paused: "Paused",
     stopped: "Stopped",

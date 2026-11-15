@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { listMyCards } from "../../lib/api";
 import type { ProofCard } from "../../types/database";
-import { Badge, ButtonLink, Card, LoadingBlock, EmptyState } from "../../components/ui";
+import { Badge, Button, ButtonLink, Card, LoadingBlock, EmptyState } from "../../components/ui";
 import { DemoCard, StatusBadge } from "../../components/DomainKit";
 import { demoFailedProject } from "../../lib/demoData";
 import { useAuth } from "../../lib/auth";
@@ -20,9 +21,10 @@ const STATUS_EXPLANATIONS: Record<string, string> = {
 export default function MyProofPage() {
   const { user } = useAuth();
 
+  const [showArchived, setShowArchived] = useState(false);
   const { data: cards, isLoading } = useQuery({
-    queryKey: ["myCards", user?.id],
-    queryFn: () => listMyCards(user!.id),
+    queryKey: ["myCards", user?.id, showArchived],
+    queryFn: () => listMyCards(user!.id, showArchived),
     enabled: !!user,
   });
 
@@ -44,10 +46,15 @@ export default function MyProofPage() {
         <ButtonLink to="/app" variant="secondary" size="sm">Back to dashboard</ButtonLink>
       </div>
 
+      <div className="mb-4 flex gap-2">
+        <Button size="sm" variant={!showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(false)}>Active cards</Button>
+        <Button size="sm" variant={showArchived ? "primary" : "secondary"} onClick={() => setShowArchived(true)}>Archived cards</Button>
+      </div>
+
       {list.length === 0 ? (
         <EmptyState
-          title="No Proof Cards yet"
-          description="CollectiveEvidence is created from your team's validated, built and reviewed work. Cards start in workspaces like Validation and Prototype & testing, then get reviewed."
+          title={showArchived ? "No archived Proof Cards" : "No active Proof Cards yet"}
+          description={showArchived ? "Archived cards preserve their evidence and can be restored at any time." : "CollectiveEvidence is created from your team's validated, built and reviewed work. Cards start in workspaces like Validation and Prototype & testing, then get reviewed."}
         />
       ) : (
         <div className="space-y-4">

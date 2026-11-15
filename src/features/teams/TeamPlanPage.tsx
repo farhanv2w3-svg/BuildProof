@@ -50,6 +50,7 @@ export default function TeamPlanPage() {
           teamId={team.id}
           rows={(milestones ?? []) as ProjectMilestone[]}
           onError={setMErr}
+          onDone={() => qc.invalidateQueries({ queryKey: ["milestones", teamId] })}
         />
         {mErr && <div className="mt-3"><ErrorBanner message={mErr} /></div>}
       </Card>
@@ -72,8 +73,8 @@ export default function TeamPlanPage() {
 type ProfileRef = { id: string; full_name: string; email: string | null };
 
 function MilestonePanel({
-  teamId, rows, onError,
-}: { teamId: string; rows: ProjectMilestone[]; onError: (s: string) => void }) {
+  teamId, rows, onError, onDone,
+}: { teamId: string; rows: ProjectMilestone[]; onError: (s: string) => void; onDone: () => void }) {
   const [title, setTitle] = useState("");
   const [due, setDue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -101,14 +102,14 @@ function MilestonePanel({
                     className="rounded border border-line bg-surface px-1.5 py-1 text-[11.5px]"
                     value={m.status}
                     onChange={async (e) => {
-                      try { await updateMilestone(m.id, { status: e.target.value as ProjectMilestone["status"] }); onError(""); }
+                      try { await updateMilestone(m.id, { status: e.target.value as ProjectMilestone["status"] }); onError(""); onDone(); }
                       catch (err) { onError(errMessage0(err)); }
                     }}
                   >
                     {["pending", "in_progress", "done", "late"].map((s) => <option key={s} value={s}>{titleize(s)}</option>)}
                   </select>
                   <ButtonGhostTrash label="Delete milestone" onClick={async () => {
-                    try { await deleteMilestone(m.id); onError(""); } catch (err) { onError(errMessage0(err)); }
+                    try { await deleteMilestone(m.id); onError(""); onDone(); } catch (err) { onError(errMessage0(err)); }
                   }} />
                 </div>
               </div>
@@ -126,6 +127,7 @@ function MilestonePanel({
           try {
             await createMilestone({ team_id: teamId, title: title.trim(), due_date: due || null });
             setTitle(""); setDue("");
+            onDone();
           } catch (err) { onError(errMessage0(err)); } finally { setBusy(false); }
         }}
       >

@@ -138,12 +138,20 @@ export default function SignupPage() {
 
 export function AuthShell({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-canvas px-4 py-10">
-      <Link to="/" className="mb-6" aria-label="BuildProof home">
+    <div className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-canvas px-4 py-10">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-72"
+        style={{
+          background:
+            "radial-gradient(48rem 20rem ellipse at 50% -8rem, #DDF2E8 0%, rgba(221,242,232,0) 70%)",
+        }}
+      />
+      <Link to="/" className="relative mb-6" aria-label="BuildProof home">
         <Logo />
       </Link>
-      <h1 className="display-title mb-5 text-xl sm:text-2xl text-center">{title}</h1>
-      <div className="w-full max-w-md">{children}</div>
+      <h1 className="display-title relative mb-5 text-xl sm:text-2xl text-center">{title}</h1>
+      <div className="relative w-full max-w-md">{children}</div>
     </div>
   );
 }

@@ -5,17 +5,21 @@ import {
   listOrgCompanyProjects, createCompanyProject, updateCompanyProject,
   listPaymentMilestones, createPaymentMilestone, updatePaymentMilestone,
   createFundingOpportunity, createOpportunity, listOrgOpportunityApplications, decideOpportunityApplication,
+  listFundingOpportunities, listOpportunities, updateFundingOpportunity, updateOpportunity, errMessage,
+  fetchOrganizationRoster, addOrganizationMember, removeOrganizationMember, findUserIdByEmail,
+  listFundingApplications, decideFundingApplication,
 } from "../../lib/api";
 import type {
   CompanyProject, FundingOpportunity, JobOpportunity, Organization,
   PaymentMilestone, OpportunityApplication,
 } from "../../types/database";
 import {
-  Button, Card, ErrorBanner, Field, Input, LoadingBlock, Select, Textarea,
+  Button, Card, Badge, ConfirmDialog, ErrorBanner, Field, Input, LoadingBlock, Select, SuccessBanner, Textarea,
 } from "../../components/ui";
 import { StatusBadge, VerificationNote, money, moneyRange } from "../../components/DomainKit";
-import { demoBeginnerTask } from "../../lib/demoData";
 import { DemoCard } from "../../components/DomainKit";
+import { demoBeginnerTask } from "../../lib/demoData";
+import { titleize } from "../../lib/utils";
 import { useAuth } from "../../lib/auth";
 
 /* Company / funder workspace. Registering an organisation does NOT make it
@@ -77,7 +81,7 @@ export default function OrgWorkspacePage() {
         </div>
       </div>
 
-      {success && <div className="mb-4"><ErrorBanner message={success} /></div>}
+      {success && <div className="mb-4"><SuccessBanner message={success} /></div>}
 
       {myOrgs.length === 0 ? (
         <Card className="p-5">
@@ -136,6 +140,7 @@ export default function OrgWorkspacePage() {
               {/* Project posting + payments (owner/representative only, RLS enforced) */}
               {(org.org_role === "owner" || org.org_role === "representative") && (
                 <>
+                  <OrgRosterSection orgId={org.id} />
                   <OrgProjectSection orgId={org.id} />
                   <FundingJobSection orgId={org.id} />
                 </>
@@ -151,6 +156,95 @@ export default function OrgWorkspacePage() {
 }
 
 /* ------------------- company projects + payment milestones --------- */
+
+/** B13 — organization roster: viewed by everyone in the org; owner/rep can add
+ * (by email) and remove members. Escalation is bounded: adding members grants
+ * only the accepting workflow (they confirm their own membership by email-based
+ * invite accept or leave proposed until?), and role grants stay admin-only. */
+function OrgRosterSection({ orgId }: { orgId: string }) {
+  const qc = useQueryClient();
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [removeMember, setRemoveMember] = useState<{ id: string; name: string } | null>(null);
+
+  const { data: roster } = useQuery({
+    queryKey: ["orgRoster", orgId],
+    queryFn: () => fetchOrganizationRoster(orgId),
+  });
+
+  const add = async () => {
+    setBusy(true); setError(null); setOk(null);
+    try {
+      const uid = await findUserIdByEmail(email.trim().toLowerCase());
+      if (!uid) {
+        setError("No BuildProof account for that email. The person must sign up first.");
+        return;
+      }
+      await addOrganizationMember(orgId, uid);
+      setOk("Member added. They see the organisation workspace after signing in.");
+      setEmail("");
+      await qc.invalidateQueries({ queryKey: ["orgRoster", orgId] });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not add member.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-5 border-t border-line pt-4">
+      <h3 className="text-[14px] font-bold text-ink">Organisation roster</h3>
+      {(roster ?? []).length === 0 ? (
+        <p className="mt-2 text-[13px] text-ink-soft">Just you so far.</p>
+      ) : (
+        <ul className="mt-2 space-y-1.5">
+          {(roster ?? []).map((m) => (
+            <li key={m.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-[13px]">
+              <span>
+                <strong className="font-semibold">{m.profile?.full_name ?? "Member"}</strong>
+                <span className="ml-2 text-[12px] text-ink-soft">{m.org_role}</span>
+              </span>
+              <button
+                className="text-[12px] font-semibold text-danger hover:underline"
+                onClick={() => setRemoveMember({ id: m.id, name: m.profile?.full_name ?? "this member" })}
+              >
+                remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-3 flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="mb-1 block text-[12px] font-semibold text-ink">Add member by email</span>
+          <Input className="max-w-xs" type="email" placeholder="member@example.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        </label>
+        <Button size="sm" onClick={add} loading={busy} disabled={email.trim().length < 5}>Add member</Button>
+      </div>
+      {ok && <p className="mt-2 text-[12.5px] font-medium text-success" role="status">{ok}</p>}
+      {error && <div className="mt-2 max-w-xl"><ErrorBanner message={error} /></div>}
+      <ConfirmDialog
+        open={removeMember !== null}
+        title={`Remove ${removeMember?.name ?? "member"}?`}
+        description="This person will lose access to the organisation workspace."
+        confirmLabel="Remove member"
+        destructive
+        onCancel={() => setRemoveMember(null)}
+        onConfirm={async () => {
+          if (!removeMember) return;
+          const member = removeMember;
+          setRemoveMember(null);
+          setError(null);
+          try { await removeOrganizationMember(member.id); }
+          catch (e) { setError(e instanceof Error ? e.message : "Could not remove member."); }
+          await qc.invalidateQueries({ queryKey: ["orgRoster", orgId] });
+        }}
+      />
+    </div>
+  );
+}
 
 function OrgProjectSection({ orgId }: { orgId: string }) {
   const qc = useQueryClient();
@@ -386,13 +480,23 @@ function PaymentMilestonesSection({ projectId }: { projectId: string }) {
 function FundingJobSection({ orgId }: { orgId: string }) {
   const qc = useQueryClient();
   const { user } = useAuth();
-  const [tab, setTab] = useState<"funding" | "jobs" | "apps">("jobs");
+  const [tab, setTab] = useState<"funding" | "jobs" | "apps" | "listings">("jobs");
   const [error, setError] = useState<string | null>(null);
 
   const { data: managedApps } = useQuery({
     queryKey: ["orgOppApplications", orgId],
     queryFn: () => listOrgOpportunityApplications(orgId),
     enabled: tab === "apps",
+  });
+  // B10: the org's own published listings — pause/close lives HERE (was
+  // missing entirely: updateFundingOpportunity/updateOpportunity unreachable).
+  const { data: listings } = useQuery({
+    queryKey: ["orgListings", orgId],
+    queryFn: async () => {
+      const [funding, jobs] = await Promise.all([listFundingOpportunities(), listOpportunities()]);
+      return { funding, jobs };
+    },
+    enabled: tab === "listings",
   });
 
   return (
@@ -401,6 +505,7 @@ function FundingJobSection({ orgId }: { orgId: string }) {
         <Button size="sm" variant={tab === "jobs" ? "primary" : "secondary"} onClick={() => setTab("jobs")}>Post an opportunity</Button>
         <Button size="sm" variant={tab === "funding" ? "primary" : "secondary"} onClick={() => setTab("funding")}>Post funding</Button>
         <Button size="sm" variant={tab === "apps" ? "primary" : "secondary"} onClick={() => setTab("apps")}>Applications I manage</Button>
+        <Button size="sm" variant={tab === "listings" ? "primary" : "secondary"} onClick={() => setTab("listings")}>My listings</Button>
       </div>
       {error && <div className="mt-3"><ErrorBanner message={error} /></div>}
 
@@ -449,7 +554,177 @@ function FundingJobSection({ orgId }: { orgId: string }) {
           )}
         </div>
       )}
+
+      {tab === "listings" && (
+        <div className="mt-3 space-y-3">
+          <p className="text-[12.5px] text-ink-soft">
+            Pausing hides a listing from new applications; closing ends it permanently for new
+            applicants. Existing applications are always preserved.
+          </p>
+          <ListingLifecycleRow
+            heading="Funding programmes"
+            rows={(listings?.funding ?? [])
+              .filter((f) => f.organization_id === orgId)
+              .map((f) => ({ id: f.id, title: f.title, status: f.status }))}
+            setStatus={(id, status) => updateFundingOpportunity(id, { status: status as FundingOpportunity["status"] })}
+            onError={setError}
+            qk={["orgListings", orgId]}
+          />
+          {/* B9 funder side — applications per funding programme + decisions. */}
+          {(listings?.funding ?? []).filter((f) => f.organization_id === orgId).map((f) => (
+            <FundingApplicationsPanel key={f.id} fundingId={f.id} title={f.title} />
+          ))}
+          <ListingLifecycleRow
+            heading="Opportunities"
+            rows={(listings?.jobs ?? [])
+              .filter((j) => j.organization_id === orgId)
+              .map((j) => ({ id: j.id, title: j.title, status: j.status }))}
+            setStatus={(id, status) => updateOpportunity(id, { status: status as JobOpportunity["status"] })}
+            onError={setError}
+            qk={["orgListings", orgId]}
+          />
+        </div>
+      )}
     </div>
+  );
+}
+
+/** B9 (funder side) — applications to one funding programme with decision a
+ * select. RLS: the funder org's admins decide; applicants can never self-approve. */
+function FundingApplicationsPanel({ fundingId, title }: { fundingId: string; title: string }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const { data: apps, isLoading } = useQuery({
+    queryKey: ["fundingApplications", fundingId],
+    queryFn: () => listFundingApplications(fundingId),
+  });
+  return (
+    <Card className="p-4">
+      <p className="text-[13px] font-semibold">Applications — {title}</p>
+      {isLoading ? (
+        <p className="mt-2 text-[12.5px] text-ink-soft">Loading applications…</p>
+      ) : (apps ?? []).length === 0 ? (
+        <p className="mt-2 text-[12.5px] text-ink-soft">No applications yet.</p>
+      ) : (
+        <ul className="mt-2 space-y-1.5">
+          {(apps ?? []).map((a) => (
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-[13px]">
+              <span className="min-w-0">
+                <strong className="font-semibold">{a.profile?.full_name ?? "Applicant"}</strong>
+                <p className="mt-0.5 text-[12px] text-ink-soft">{a.pitch}</p>
+                {a.requested_amount != null && (
+                  <p className="text-[12px] text-ink-soft">Requested Rs. {a.requested_amount.toLocaleString("en-IN")}</p>
+                )}
+              </span>
+              <Select
+                aria-label="Funding application decision"
+                className="w-32 text-[11.5px]"
+                value={a.status}
+                onChange={async (e) => {
+                  try {
+                    await decideFundingApplication(a.id, e.target.value as "submitted" | "under_review" | "approved" | "declined");
+                    await qc.invalidateQueries({ queryKey: ["fundingApplications", fundingId] });
+                  } catch (err) { setError(err instanceof Error ? err.message : "Failed."); }
+                }}
+              >
+                {["submitted", "under_review", "approved", "declined"].map((s) => (
+                  <option key={s} value={s}>{s.replace(/_/g, " ")}</option>
+                ))}
+              </Select>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && <div className="mt-2"><ErrorBanner message={error} /></div>}
+    </Card>
+  );
+}
+
+/** B10 — pause/close controls. Only valid transitions are offered: open →
+ * paused/closed, paused → open/closed, and closed is terminal (no reopening a
+ * closed listing — the database check constraints only allow open/paused/closed). */
+function ListingLifecycleRow({
+  heading, rows, setStatus, onError, qk,
+}: {
+  heading: string;
+  rows: { id: string; title: string; status: string }[];
+  setStatus: (id: string, status: "open" | "paused" | "closed") => Promise<void>;
+  onError: (s: string) => void;
+  qk: readonly unknown[];
+}) {
+  const qc = useQueryClient();
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [closing, setClosing] = useState<{ id: string; title: string } | null>(null);
+  return (
+    <Card className="p-4">
+      <p className="text-[13px] font-semibold">{heading}</p>
+      {rows.length === 0 ? (
+        <p className="mt-2 text-[12.5px] text-ink-soft">Nothing here yet.</p>
+      ) : (
+        <ul className="mt-2 space-y-1.5">
+          {rows.map((r) => (
+            <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-canvas px-3 py-2 text-[13px]">
+              <span className="min-w-0">
+                <strong className="font-semibold">{r.title}</strong>
+                <span className="ml-2 text-[12px] text-ink-soft">({titleize(r.status)})</span>
+              </span>
+              {r.status !== "closed" ? (
+                <span className="flex shrink-0 items-center gap-1.5">
+                  {r.status !== "paused" && (
+                    <Button size="sm" variant="secondary" loading={busyId === r.id}
+                      onClick={async () => {
+                        setBusyId(r.id);
+                        try { await setStatus(r.id, "paused"); await qc.invalidateQueries({ queryKey: qk }); }
+                        catch (e) { onError(errMessage(e)); }
+                        finally { setBusyId(null); }
+                      }}
+                    >
+                      Pause
+                    </Button>
+                  )}
+                  {r.status === "paused" && (
+                    <Button size="sm" variant="secondary" loading={busyId === r.id}
+                      onClick={async () => {
+                        setBusyId(r.id);
+                        try { await setStatus(r.id, "open"); await qc.invalidateQueries({ queryKey: qk }); }
+                        catch (e) { onError(errMessage(e)); }
+                        finally { setBusyId(null); }
+                      }}
+                    >
+                      Reopen
+                    </Button>
+                  )}
+                  <Button size="sm" variant="danger" loading={busyId === r.id}
+                    onClick={() => setClosing({ id: r.id, title: r.title })}
+                  >
+                    Close
+                  </Button>
+                </span>
+              ) : (
+                <Badge tone="neutral">Closed</Badge>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <ConfirmDialog
+        open={closing !== null}
+        title={`Close “${closing?.title ?? "listing"}”?`}
+        description="The listing will no longer accept applications. Existing applications will be kept."
+        confirmLabel="Close listing"
+        destructive
+        onCancel={() => setClosing(null)}
+        onConfirm={async () => {
+          if (!closing) return;
+          const row = closing;
+          setClosing(null);
+          setBusyId(row.id);
+          try { await setStatus(row.id, "closed"); await qc.invalidateQueries({ queryKey: qk }); }
+          catch (e) { onError(errMessage(e)); }
+          finally { setBusyId(null); }
+        }}
+      />
+    </Card>
   );
 }
 

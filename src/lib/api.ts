@@ -10,12 +10,14 @@ import type {
   FeasibilityReview,
   FundingApplication,
   FundingOpportunity,
+  FeatureAnnouncement,
   HardwareProject,
   Institution,
   Interview,
   JobOpportunity,
   MentorAssignment,
   Notification,
+  NotificationPreferences,
   Organization,
   OrganizationMember,
   OpportunityApplication,
@@ -38,6 +40,7 @@ import type {
   TeamApplication,
   TeamDecision,
   TeamInvite,
+  TeamMessage,
   TeamMember,
   TeamRoleRequirement,
   UserRole,
@@ -413,12 +416,20 @@ export async function reviewFeasibility(
   id: string,
   reviewerId: string,
   feedback: string | null,
-  status: FeasibilityReview["status"]
+  status: FeasibilityReview["status"],
+  decision: FeasibilityReview["decision"] | null = null
 ): Promise<void> {
   const s = requireSupabase();
   const { error } = await s
     .from("feasibility_reviews")
-    .update({ reviewer_id: reviewerId, reviewer_feedback: feedback, status })
+    .update({
+      reviewer_id: reviewerId,
+      reviewer_feedback: feedback,
+      status,
+      /* Reviewer decision on the assessment (A10: previously never written —
+         the UI showed "Decision: Not set" forever). null = leave unchanged. */
+      ...(decision ? { decision } : {}),
+    })
     .eq("id", id);
   await fail(error);
 }
@@ -490,7 +501,7 @@ export interface ProofCardFull extends ProofCard {
   team: (Team & { problem: Problem | null }) | null;
 }
 
-export async function listMyCards(userId: string): Promise<ProofCard[]> {
+export async function listMyCards(userId: string, archived = false): Promise<ProofCard[]> {
   const s = requireSupabase();
   // Cards across teams this user belongs to
   const { data: memberships, error: memErr } = await s
@@ -504,6 +515,7 @@ export async function listMyCards(userId: string): Promise<ProofCard[]> {
     .from("proof_cards")
     .select("*")
     .in("team_id", ids)
+    .eq("archived", archived)
     .order("created_at", { ascending: false });
   await fail(error);
   return (data ?? []) as ProofCard[];
@@ -526,6 +538,7 @@ export async function listPublicCards(): Promise<ProofCard[]> {
     .from("proof_cards")
     .select("*")
     .eq("visibility", "public")
+    .eq("archived", false)
     .in("review_status", ["approved", "published"])
     .order("published_at", { ascending: false, nullsFirst: false });
   await fail(error);
@@ -605,6 +618,15 @@ export async function assignMentor(team_id: string, mentor_id: string, assigned_
   await fail(error);
 }
 
+/** B3: deactivate (or re-activate) an assignment. Requires the mentor_assignment
+ * update policy from the drafted repair migration — until then the database
+ * rejects updates and the UI surfaces that honestly. */
+export async function setMentorAssignmentActive(id: string, active: boolean): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.from("mentor_assignments").update({ active }).eq("id", id);
+  await fail(error);
+}
+
 export async function fetchComments(teamId: string, audience: Comment["audience"] | null): Promise<(Comment & { profile: Profile | null })[]> {
   const s = requireSupabase();
   const q = s
@@ -648,6 +670,140 @@ export async function sendNotification(values: Omit<Notification, "id" | "read" 
   const { error } = await s.from("notifications").insert({ ...values, read: false });
   // Non-fatal: UI should never break because a notification failed.
   if (error) console.warn("notification not delivered:", error.message);
+}
+
+export async function listNotificationsPage(offset: number, limit = 20): Promise<Notification[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("notifications")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+  await fail(error);
+  return (data ?? []) as Notification[];
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  const s = requireSupabase();
+  const { data: { user }, error: userError } = await s.auth.getUser();
+  await fail(userError);
+  if (!user) throw new Error("Not authenticated");
+  const { error } = await s.from("notifications").update({ read: true }).eq("user_id", user.id).eq("read", false);
+  await fail(error);
+}
+
+export async function getNotificationPreferences(): Promise<NotificationPreferences | null> {
+  const s = requireSupabase();
+  const { data: userData, error: userError } = await s.auth.getUser();
+  await fail(userError);
+  if (!userData.user) return null;
+  const { data, error } = await s
+    .from("notification_preferences")
+    .select("*")
+    .eq("user_id", userData.user.id)
+    .maybeSingle();
+  await fail(error);
+  return data as NotificationPreferences | null;
+}
+
+export async function saveNotificationPreferences(
+  preferences: Omit<NotificationPreferences, "user_id" | "updated_at">
+): Promise<void> {
+  const s = requireSupabase();
+  const { data, error: userError } = await s.auth.getUser();
+  await fail(userError);
+  if (!data.user) throw new Error("Not authenticated");
+  const { error } = await s.from("notification_preferences").upsert({
+    ...preferences,
+    user_id: data.user.id,
+    updated_at: new Date().toISOString(),
+  });
+  await fail(error);
+}
+
+export async function savePushSubscription(subscription: PushSubscriptionJSON): Promise<void> {
+  const s = requireSupabase();
+  const { data, error: userError } = await s.auth.getUser();
+  await fail(userError);
+  if (!data.user) throw new Error("Not authenticated");
+  if (!subscription.endpoint || !subscription.keys?.p256dh || !subscription.keys?.auth) {
+    throw new Error("Incomplete browser push subscription");
+  }
+  const bytes = new TextEncoder().encode(subscription.endpoint);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const endpointHash = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+  const { error } = await s.from("push_subscriptions").upsert({
+    user_id: data.user.id,
+    endpoint: subscription.endpoint,
+    endpoint_hash: endpointHash,
+    p256dh: subscription.keys.p256dh,
+    auth: subscription.keys.auth,
+    enabled: true,
+    updated_at: new Date().toISOString(),
+  }, { onConflict: "endpoint_hash" });
+  await fail(error);
+}
+
+export async function disablePushSubscription(endpoint: string): Promise<void> {
+  const s = requireSupabase();
+  const { data, error: userError } = await s.auth.getUser();
+  await fail(userError);
+  const bytes = new TextEncoder().encode(endpoint);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const endpointHash = [...new Uint8Array(digest)].map((value) => value.toString(16).padStart(2, "0")).join("");
+  const { error } = await s.from("push_subscriptions")
+    .delete()
+    .eq("endpoint_hash", endpointHash)
+    .eq("user_id", data.user?.id);
+  await fail(error);
+}
+
+export async function listFeatureAnnouncements(): Promise<FeatureAnnouncement[]> {
+  const s = requireSupabase();
+  const { data, error } = await s.from("feature_announcements")
+    .select("*")
+    .order("created_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as FeatureAnnouncement[];
+}
+
+export async function saveFeatureAnnouncement(
+  announcement: Partial<FeatureAnnouncement>,
+): Promise<FeatureAnnouncement> {
+  const s = requireSupabase();
+  const { data: userData, error: userError } = await s.auth.getUser();
+  await fail(userError);
+  if (!userData.user) throw new Error("Not authenticated");
+  const payload = {
+    ...announcement,
+    author_id: userData.user.id,
+    updated_at: new Date().toISOString(),
+  };
+  const query = announcement.id
+    ? s.from("feature_announcements").update(payload).eq("id", announcement.id).select("*").single()
+    : s.from("feature_announcements").insert(payload).select("*").single();
+  const { data, error } = await query;
+  await fail(error);
+  return data as FeatureAnnouncement;
+}
+
+export async function publishFeatureAnnouncement(id: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.rpc("publish_feature_announcement", { announcement_id: id });
+  await fail(error);
+}
+
+export async function listRegistrationNotificationStatus(): Promise<Record<string, unknown>[]> {
+  const s = requireSupabase();
+  const { data, error } = await s.rpc("admin_registration_notification_status");
+  await fail(error);
+  return (data ?? []) as Record<string, unknown>[];
+}
+
+export async function retryRegistrationNotification(userId: string): Promise<void> {
+  const s = requireSupabase();
+  const { error } = await s.rpc("retry_registration_notification", { target_user_id: userId });
+  await fail(error);
 }
 
 /* ------------------------------ admin ------------------------------ */
@@ -865,11 +1021,41 @@ export async function decideTeamApplication(
   decidedBy: string
 ): Promise<void> {
   const s = requireSupabase();
+  if (status === "accepted") {
+    /* B2: acceptance must ALSO create the membership row. The direct client
+       update could only mark the application accepted, silently leaving the
+       applicant without a team. The transactional RPC
+       (supabase/migrations/0008_accept_team_application.sql — DRAFT, awaiting
+       approval) does decision + membership + notification + audit atomically. */
+    const { error } = await s.rpc("accept_team_application", { application_id: id });
+    if (error) {
+      if (error.code === "PGRST202" || /Could not find the function/i.test(error.message)) {
+        throw new Error(
+          "Acceptance needs database migration 0008 (accept_team_application) to be applied first. Apply the migration draft, then retry. The application was left untouched."
+        );
+      }
+      throw error;
+    }
+    return;
+  }
+  // Rejection is a plain status update (no membership side effects).
   const { error } = await s
     .from("team_applications")
     .update({ status, decided_by: decidedBy })
     .eq("id", id);
   await fail(error);
+}
+
+/** B9: the applicant's teams (for funding applications, where a team may be the
+ * applicant). RLS: a member can always read their own team's membership row. */
+export async function listMyTeamMemberships(userId: string): Promise<(TeamMember & { team: Team | null })[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("team_members")
+    .select("*, team:teams(*)")
+    .eq("user_id", userId);
+  await fail(error);
+  return (data ?? []) as (TeamMember & { team: Team | null })[];
 }
 
 /* --------------------- milestones & tasks ------------------------- */
@@ -1216,6 +1402,40 @@ export async function updateHardwareProject(id: string, patch: Partial<HardwareP
   await fail(error);
 }
 
+export async function listPublicHardware(): Promise<HardwareProject[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("hardware_projects")
+    .select("*")
+    .eq("visibility", "public")
+    .not("published_at", "is", null)
+    .order("published_at", { ascending: false });
+  await fail(error);
+  return (data ?? []) as HardwareProject[];
+}
+
+export async function listTeamMessages(teamId: string): Promise<TeamMessage[]> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("team_messages")
+    .select("id, team_id, sender_id, body, created_at")
+    .eq("team_id", teamId)
+    .order("created_at", { ascending: true });
+  await fail(error);
+  return (data ?? []) as TeamMessage[];
+}
+
+export async function sendTeamMessage(teamId: string, senderId: string, body: string): Promise<TeamMessage> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("team_messages")
+    .insert({ team_id: teamId, sender_id: senderId, body })
+    .select("id, team_id, sender_id, body, created_at")
+    .single();
+  await fail(error);
+  return data as TeamMessage;
+}
+
 /* ---------------------------- opportunities ------------------------ */
 
 export async function listOpportunities(): Promise<JobOpportunity[]> {
@@ -1481,13 +1701,16 @@ export async function updateReportStatus(
 
 /* ---------------------------- storage ------------------------------ */
 
-export async function listEvidence(teamId: string): Promise<EvidenceAttachment[]> {
+export async function listEvidence(teamId: string, stage?: EvidenceAttachment["stage"], proofCardId?: string | null): Promise<EvidenceAttachment[]> {
   const s = requireSupabase();
-  const { data, error } = await s
-    .from("evidence_attachments")
-    .select("*")
-    .eq("team_id", teamId)
-    .order("created_at", { ascending: false });
+  /* 9.6: filter by stage server-side when the caller names a stage, instead of
+     returning every stage and asking the UI to filter. */
+  let q = s.from("evidence_attachments").select("*").eq("team_id", teamId);
+  if (stage) q = q.eq("stage", stage);
+  if (proofCardId !== undefined) {
+    q = proofCardId ? q.eq("proof_card_id", proofCardId) : q.is("proof_card_id", null);
+  }
+  const { data, error } = await q.order("created_at", { ascending: false });
   await fail(error);
   return (data ?? []) as EvidenceAttachment[];
 }
@@ -1497,7 +1720,8 @@ export async function uploadEvidence(
   stage: EvidenceAttachment["stage"],
   visibility: EvidenceAttachment["visibility"],
   uploadedBy: string,
-  file: File
+  file: File,
+  proofCardId?: string | null
 ) {
   const s = requireSupabase();
   const path = `${teamId}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
@@ -1509,6 +1733,7 @@ export async function uploadEvidence(
     .from("evidence_attachments")
     .insert({
       team_id: teamId,
+      proof_card_id: proofCardId ?? null,
       stage,
       visibility,
       uploaded_by: uploadedBy,
@@ -1524,6 +1749,19 @@ export async function uploadEvidence(
 }
 
 /** Signed URL valid for a short window; files stay private in storage. */
+export async function associateEvidence(evidenceId: string, teamId: string, proofCardId: string): Promise<void> {
+  const s = requireSupabase();
+  const { data, error } = await s
+    .from("evidence_attachments")
+    .update({ proof_card_id: proofCardId })
+    .eq("id", evidenceId)
+    .eq("team_id", teamId)
+    .select("id")
+    .maybeSingle();
+  await fail(error);
+  if (!data) throw new Error("Evidence could not be linked. Confirm that you can edit this team and Proof Card.");
+}
+
 export async function evidenceDownloadUrl(filePath: string): Promise<string> {
   const s = requireSupabase();
   const { data, error } = await s.storage.from("evidence").createSignedUrl(filePath, 300);
@@ -1648,7 +1886,7 @@ export interface EventFilters {
  * is duplicated here. */
 export async function listEvents(filters: EventFilters = {}): Promise<EventRow[]> {
   const s = requireSupabase();
-  let q = s.from("events").select("*");
+  let q = s.from("events").select("*").eq("status", "published");
   if (filters.q) {
     // Commas would break the or() grammar; they add nothing to a search.
     const term = filters.q.replace(/[,()]/g, " ").trim();

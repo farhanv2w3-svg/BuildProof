@@ -79,6 +79,7 @@ export default function FeasibilityPage() {
 
   const [feedback, setFeedback] = useState(reviewerFeedbackValue);
   const [fbStatus, setFbStatus] = useState<"draft" | "reviewed">("reviewed");
+  const [fbDecision, setFbDecision] = useState<"" | "continue" | "revise" | "stop">("");
 
   if (isLoading) return <LoadingBlock />;
   if (!user || !teamId) return null;
@@ -119,7 +120,7 @@ export default function FeasibilityPage() {
           value={record?.reviewer_feedback ? "Yes" : "No"}
           note={record?.reviewer_id ? "feedback recorded" : "pending reviewer"}
         />
-        <StageStat label="Decision" value={record?.decision ? titleize(record.decision) : "Not set"} />
+        <StageStat label="Reviewer decision" value={record?.decision ? titleize(record.decision) : "Not set"} />
       </div>
 
       <InfoNote>
@@ -164,10 +165,18 @@ export default function FeasibilityPage() {
                   <option value="draft">Request changes (back to draft)</option>
                 </Select>
               </Field>
+              <Field label="Reviewer decision" hint="Written to the assessment — shown in the page stats.">
+                <Select value={fbDecision} onChange={(e) => setFbDecision(e.target.value as typeof fbDecision)}>
+                  <option value="">Leave unchanged</option>
+                  <option value="continue">Continue</option>
+                  <option value="revise">Revise</option>
+                  <option value="stop">Stop</option>
+                </Select>
+              </Field>
               <Button
                 onClick={async () => {
                   try {
-                    await reviewFeasibility(record.id, user.id, feedback.trim() || null, fbStatus as "draft" | "reviewed");
+                    await reviewFeasibility(record.id, user.id, feedback.trim() || null, fbStatus as "draft" | "reviewed", fbDecision || null);
                     await qc.invalidateQueries({ queryKey: ["feasibility", teamId] });
                   } catch (e) {
                     setErr(errMessage(e));

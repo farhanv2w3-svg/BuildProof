@@ -51,15 +51,31 @@ import MyProofPage from "./features/proof/MyProofPage";
 import TeamPlanPage from "./features/teams/TeamPlanPage";
 import TeamRolesPage from "./features/teams/TeamRolesPage";
 import TeamSolutionsPage from "./features/proof/TeamSolutionsPage";
+import TeamChatPage from "./features/teams/TeamChatPage";
 import OrgWorkspacePage from "./features/orgs/OrgWorkspacePage";
 import MyHardwarePage from "./features/hardware/MyHardwarePage";
 import MyOpportunitiesPage from "./features/opportunities/MyOpportunitiesPage";
+import NotificationCentrePage from "./pages/NotificationCentrePage";
+import NotificationPreferencesPage from "./pages/NotificationPreferencesPage";
 
 /* 0004 — college events */
 import EventsPage from "./features/events/EventsPage";
 import EventDetailPage from "./features/events/EventDetailPage";
 import EventEditorPage from "./features/events/EventEditorPage";
 import MyEventsPage from "./features/events/MyEventsPage";
+
+/* 0015 — EventSpace */
+import EventSpaceLanding from "./features/eventspace/EventSpaceLanding";
+import EventPublicPage from "./features/eventspace/EventPublicPage";
+import EventShowcasePage from "./features/eventspace/EventShowcasePage";
+import RegistrationPage from "./features/eventspace/RegistrationPage";
+import ParticipantDashboard from "./features/eventspace/ParticipantDashboard";
+import SubmissionWorkspace from "./features/eventspace/SubmissionWorkspace";
+import OrganizerPage from "./features/eventspace/OrganizerPage";
+import CreateEventPage from "./features/eventspace/CreateEventPage";
+import OrganizerWorkspace from "./features/eventspace/OrganizerWorkspace";
+import JudgeWorkspace, { JudgeEvaluationPage } from "./features/eventspace/JudgeWorkspace";
+import PromotionKitPage from "./features/eventspace/PromotionKitPage";
 
 export default function App() {
   return (
@@ -87,6 +103,15 @@ export default function App() {
           <Route path="/startups-funding" element={<PublicStartupsPage />} />
           <Route path="/hardware" element={<PublicHardwarePage />} />
           <Route path="/opportunities" element={<PublicOpportunitiesPage />} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/events/:eventId" element={<EventDetailPage />} />
+
+          {/* 0015 EventSpace (public) */}
+          <Route path="/eventspace" element={<EventSpaceLanding />} />
+          <Route path="/eventspace/:slug" element={<EventPublicPage />} />
+          <Route path="/eventspace/:slug/showcase" element={<EventShowcasePage />} />
+          <Route path="/eventspace/:slug/register" element={<RegistrationPage />} />
+          <Route path="/eventspace/organizer" element={<OrganizerPage />} />
         </Route>
 
         {/* Auth pages (standalone, focused layout) */}
@@ -119,6 +144,7 @@ export default function App() {
             <Route path="plan" element={<TeamPlanPage />} />
             <Route path="roles" element={<TeamRolesPage />} />
             <Route path="solutions" element={<TeamSolutionsPage />} />
+            <Route path="chat" element={<TeamChatPage />} />
           </Route>
           <Route path="proof-cards/:proofCardId" element={<ProofCardDetailPage />} />
           <Route path="invites/:token" element={<InviteAcceptPage />} />
@@ -135,6 +161,16 @@ export default function App() {
           <Route path="events/:eventId" element={<EventDetailPage />} />
           <Route path="my-events" element={<MyEventsPage />} />
           <Route path="my-events/:eventId/edit" element={<EventEditorPage />} />
+
+          {/* 0015 EventSpace (authenticated) */}
+          <Route path="eventspace" element={<ParticipantDashboard />} />
+          <Route path="eventspace/create" element={<CreateEventPage />} />
+          <Route path="eventspace/:eventId/edit" element={<CreateEventPage />} />
+          <Route path="eventspace/:eventId/submit" element={<SubmissionWorkspace />} />
+          <Route path="eventspace/:eventId/manage" element={<OrganizerWorkspace />} />
+          <Route path="eventspace/:eventId/promote" element={<PromotionKitPage />} />
+          <Route path="eventspace/judging" element={<JudgeWorkspace />} />
+          <Route path="eventspace/judging/:assignmentId" element={<JudgeEvaluationPage />} />
 
           <Route
             path="mentor"
@@ -161,6 +197,8 @@ export default function App() {
             }
           />
           <Route path="profile" element={<ProfilePage />} />
+          <Route path="notifications" element={<NotificationCentrePage />} />
+          <Route path="notification-preferences" element={<NotificationPreferencesPage />} />
           <Route path="access-denied" element={<AccessDeniedPage />} />
         </Route>
 

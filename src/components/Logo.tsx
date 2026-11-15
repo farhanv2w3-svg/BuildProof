@@ -12,14 +12,14 @@ export function LogoMark({ className }: { className?: string }) {
       aria-label="BuildProof logo"
       className={cn("h-8 w-8 shrink-0", className)}
     >
-      <rect width="32" height="32" rx="7" fill="#1a6b58" />
+      <rect width="32" height="32" rx="7" fill="#105B49" />
       <rect x="5.5" y="21" width="5.5" height="6.5" rx="1.3" fill="#fff" opacity="0.45" />
       <rect x="13.2" y="16" width="5.5" height="11.5" rx="1.3" fill="#fff" opacity="0.6" />
       <rect x="21" y="11" width="5.5" height="16.5" rx="1.3" fill="#fff" opacity="0.78" />
       <path
         d="M6.5 13.5l5.4 5.3L25 6.5"
         fill="none"
-        stroke="#f2b53c"
+        stroke="#C7F36B"
         strokeWidth="3.2"
         strokeLinecap="round"
         strokeLinejoin="round"

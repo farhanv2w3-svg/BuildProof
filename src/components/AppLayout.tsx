@@ -1,5 +1,5 @@
 import { Outlet, NavLink, Link, Navigate, useLocation } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   LayoutDashboard,
   Compass,
@@ -13,6 +13,8 @@ import {
   Briefcase,
   Cpu,
   CalendarDays,
+  Settings2,
+  Trophy,
 } from "lucide-react";
 import { useState } from "react";
 import { Logo } from "./Logo";
@@ -43,7 +45,7 @@ export function AppLayout() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar />
         <div className="h-0 min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 lg:px-8">
+          <div className="mx-auto w-full max-w-[76rem] px-4 py-6 sm:px-6 lg:px-8">
             <Outlet />
           </div>
         </div>
@@ -59,6 +61,7 @@ function AppSidebar({ roles, name }: { roles: AppRole[]; name: string }) {
     { to: "/app", label: "Dashboard", icon: LayoutDashboard, show: true },
     { to: "/app/problems", label: "Problems", icon: Compass, show: true },
     { to: "/app/events", label: "Events", icon: CalendarDays, show: true },
+    { to: "/app/eventspace", label: "EventSpace", icon: Trophy, show: true },
     { to: "/app/my-proof", label: "My Proof", icon: Award, show: true },
     { to: "/app/opportunities", label: "Opportunities", icon: Briefcase, show: true },
     { to: "/app/hardware", label: "Hardware", icon: Cpu, show: true },
@@ -66,6 +69,7 @@ function AppSidebar({ roles, name }: { roles: AppRole[]; name: string }) {
     { to: "/app/mentor", label: "Mentoring", icon: ClipboardCheck, show: hasRoleAccess(roles, ["mentor"]) },
     { to: "/app/institution", label: "Institution", icon: Building2, show: hasRoleAccess(roles, ["institution_admin", "faculty_coordinator", "facilitator"]) },
     { to: "/app/admin", label: "Admin", icon: ShieldCheck, show: hasRoleAccess(roles, ["platform_admin"]) },
+    { to: "/app/notification-preferences", label: "Notifications", icon: Settings2, show: true },
   ];
 
   const link = (it: (typeof items)[number]) => (
@@ -75,10 +79,10 @@ function AppSidebar({ roles, name }: { roles: AppRole[]; name: string }) {
       end={it.to === "/app"}
       className={({ isActive }) =>
         cn(
-          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium transition-colors",
+          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13.5px] font-medium transition-[background-color,color] duration-200",
           isActive
-            ? "bg-brand-600 text-white"
-            : "text-ink-soft hover:bg-line/50 hover:text-ink"
+            ? "bg-brand-700 text-white"
+            : "text-ink-soft hover:bg-brand-100/70 hover:text-ink"
         )
       }
     >
@@ -149,11 +153,16 @@ export function triggerDrawer() {
 function TopBar() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  const qc = useQueryClient();
   const { data: notifications } = useQuery({
     queryKey: ["notifications", user?.id],
     queryFn: () => listNotifications(user!.id),
     enabled: !!user,
-    refetchOnWindowFocus: false,
+    // A12: the bell must not go stale. The app-wide default keeps
+    // refetchOnWindowFocus off (analytics, dashboards); the bell re-validates
+    // whenever the tab regains focus so unread counts stay honest. No polling.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
   const unread = (notifications ?? []).filter((n) => !n.read).length;
 
@@ -173,11 +182,11 @@ function TopBar() {
         <button
           className="relative rounded-lg p-2 text-ink-soft hover:bg-line/40 hover:text-ink"
           aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
-          onClick={() => setOpen((o) => !o)}
+          onClick={() => setOpen((value) => !value)}
         >
           <Bell className="h-5 w-5" />
           {unread > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-500 px-1 text-[10px] font-bold text-white">
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-lime-400 px-1 text-[10px] font-bold text-ink">
               {unread > 9 ? "9+" : unread}
             </span>
           )}
@@ -202,7 +211,11 @@ function TopBar() {
                       )}
                       onClick={async () => {
                         setOpen(false);
-                        if (!n.read) await markNotificationRead(n.id).catch(() => undefined);
+                        if (!n.read) {
+                          await markNotificationRead(n.id).catch(() => undefined);
+                          // A12: reflect the change in the unread count immediately.
+                          await qc.invalidateQueries({ queryKey: ["notifications", user?.id] });
+                        }
                       }}
                     >
                       <span className="block font-semibold">{n.title}</span>
@@ -221,12 +234,17 @@ function TopBar() {
                   onClick={async () => {
                     const unreadList = (notifications ?? []).filter((n) => !n.read);
                     for (const n of unreadList) await markNotificationRead(n.id).catch(() => undefined);
+                    // A12: unread badge updates without waiting for a refocus.
+                    await qc.invalidateQueries({ queryKey: ["notifications", user?.id] });
                   }}
                 >
                   Mark all read
                 </Button>
               </div>
             )}
+            <Link to="/app/notifications" onClick={() => setOpen(false)} className="mt-2 block text-center text-[12px] font-semibold text-brand-700">
+              View all notifications
+            </Link>
           </div>
         )}
       </div>

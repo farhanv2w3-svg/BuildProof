@@ -60,7 +60,7 @@ export default function PublicStartupsPage() {
             {["Problem identified", "Feasibility assessed", "Prototype developed", "Potential users evaluated", "Business model explored", "Rights agreed", "Further development funded", "Pilot or launch"].map((s, i) => (
               <span key={s} className="flex items-center gap-1">
                 <span className="rounded-md bg-brand-50 px-2 py-1 font-semibold text-brand-700">{i + 1}. {s}</span>
-                {i < 7 && <span className="text-ink-soft/60">→</span>}
+                {i < 7 && <span className="text-ink-soft">→</span>}
               </span>
             ))}
           </div>

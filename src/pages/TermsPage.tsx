@@ -47,7 +47,27 @@ export default function TermsPage() {
         any such features activate — none exist today.
       </P>
 
-      <H id="contact">Contact & reporting</H>
+      <H>Events (EventSpace)</H>
+      <P>
+        For competitions hosted through EventSpace, the event organiser (not BuildProof) sets the
+        rules, judges the entries and awards prizes; BuildProof provides the venue, private
+        submissions, judging and showcase tooling. Your project remains yours — nothing is
+        published to a public showcase unless you approve that specific content yourself. Public
+        showcase publication also requires the organiser's action. Event organisers are
+        independently verified by platform administrators and must state originality, IP and
+        disqualification terms on each event; read them before registering. BuildProof does not
+        promise certificates, prizes or selection outcomes, and it does not process prize money.
+      </P>
+
+      <H>Enforcement</H>
+      <P>
+        Administrators can revoke verification grants, remove content that violates the honesty
+        covenant, and suspend accounts that abuse the platform. There is no self-serve account
+        deletion yet — to have your account or records removed, contact the platform admin (see
+        the privacy policy for the current limitation).
+      </P>
+
+      <H id="contact">Contact &amp; reporting</H>
       <PPlaceholder />
 
       <H>Changes</H>

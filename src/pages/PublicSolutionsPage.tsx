@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import { ButtonLink } from "../components/ui";
+import { Button, ButtonLink, ErrorBanner } from "../components/ui";
 import {
   DemoCard, DomainHero, ListingCard, StatusBadge, VerificationNote,
 } from "../components/DomainKit";
-import { errMessage, listSolutions } from "../lib/api";
+import { errMessage, listSolutions, expressSolutionInterest, reportContent } from "../lib/api";
+import { useAuth } from "../lib/auth";
 import type { Solution } from "../types/database";
 import { solutionDemos } from "../lib/demoData";
 
@@ -87,6 +88,8 @@ export default function PublicSolutionsPage() {
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   <span className="text-[12px] text-ink-soft">Licensing:</span> <StatusBadge status={s.license_status} />
                 </div>
+                {/* B8 — structured interest; B12 — honest reporting. */}
+                <SolutionActions solutionId={s.id} ownerId={s.team_id} />
               </ListingCard>
             ))}
           </div>
@@ -112,6 +115,122 @@ export default function PublicSolutionsPage() {
           restricted access changes — and students' rights are never automatically removed.
         </p>
       </div>
+    </div>
+  );
+}
+
+/** B8 — interest expression + B12 — content reporting, per listed solution.
+ * Duplicate interests are prevented by the database upsert
+ * (solution_id,user_id,interest_type). Reports are visible to platform admins
+ * only (RLS), never publicly. */
+function SolutionActions({ solutionId }: { solutionId: string; ownerId: string | null }) {
+  const { user } = useAuth();
+  const [type, setType] = useState("");
+  const [done, setDone] = useState<string | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [reason, setReason] = useState("misleading");
+  const [detail, setDetail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  if (!user) {
+    return (
+      <p className="mt-2 text-[12px] text-ink-soft">
+        <ButtonLink to="/login" size="sm" variant="secondary">Sign in</ButtonLink>{" "}
+        to express structured interest in this solution or report a problem with it.
+      </p>
+    );
+  }
+
+  const send = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await expressSolutionInterest(solutionId, user.id, type as "license" | "fund" | "commission" | "collaborate" | "adopt" | "startup", null);
+      setDone("Interest recorded. The team sees it in their workspace.");
+      setType("");
+    } catch (e) {
+      setErr(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const report = async () => {
+    setBusy(true); setErr(null);
+    try {
+      await reportContent({
+        reporter: user.id,
+        subject_type: "solution",
+        subject_id: solutionId,
+        reason: reason as "misleading" | "inappropriate" | "spam" | "other",
+        detail: detail.trim() || null,
+      });
+      setReporting(false);
+      setDetail("");
+      setDone("Report recorded. Platform admins review reports privately.");
+    } catch (e) {
+      setErr(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      {done && <p className="mb-2 text-[12.5px] font-medium text-success" role="status">{done}</p>}
+      {err && <ErrorBanner message={err} />}
+      {reporting ? (
+        <div className="space-y-1.5">
+          <select
+            className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px]"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            aria-label="Report reason"
+          >
+            <option value="misleading">Misleading claims</option>
+            <option value="inappropriate">Inappropriate content</option>
+            <option value="spam">Spam</option>
+            <option value="other">Other</option>
+          </select>
+          <textarea
+            className="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px]"
+            rows={2}
+            maxLength={500}
+            placeholder="What's wrong? (optional, admin-visible only)"
+            value={detail}
+            onChange={(e) => setDetail(e.target.value)}
+            aria-label="Report detail"
+          />
+          <div className="flex gap-2">
+            <Button size="sm" variant="danger" loading={busy} onClick={report}>Send report</Button>
+            <Button size="sm" variant="secondary" onClick={() => setReporting(false)}>Cancel</Button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap items-end gap-2">
+            <select
+              className="min-w-[170px] rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12.5px]"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              aria-label="Interest type"
+            >
+              <option value="">— I'm interested to…</option>
+              <option value="adopt">Adopt / use it</option>
+              <option value="license">License it</option>
+              <option value="commission">Commission work from this team</option>
+              <option value="collaborate">Collaborate</option>
+              <option value="fund">Fund it</option>
+              <option value="startup">Start a company around it</option>
+            </select>
+            <Button size="sm" loading={busy} disabled={!type} onClick={send}>Express interest</Button>
+            <Button size="sm" variant="ghost" onClick={() => setReporting(true)}>Report</Button>
+          </div>
+          <p className="mt-1 text-[11.5px] text-ink-soft">
+            Interest is sent to the team as a record — nothing is promised or committed on your behalf.
+          </p>
+        </>
+      )}
     </div>
   );
 }

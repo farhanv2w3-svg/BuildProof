@@ -108,11 +108,14 @@ function startCase(s: string) {
     .join(" ");
 }
 
-/** Human-readable money. Payment milestones store paise/cents; budget notes
- * store plain rupees — money() converts paise, moneyRange() expects rupees. */
-export function money(cents: number | null | undefined, currency = "INR") {
-  if (cents == null) return "—";
-  const rupees = cents / 100;
+/** 9.9 — unit contract: payment milestone AMOUNTS are stored in PAISE (the
+ * database column and API keep paise — see payment_milestones.amount). This
+ * formatter takes paise and renders rupees. Anything rupee-denominated
+ * (budget notes, funding ranges via moneyRange) must NOT pass through here —
+ * mixing the two units is how the audit's potential 100x display error starts. */
+export function money(paise: number | null | undefined, currency = "INR") {
+  if (paise == null) return "—";
+  const rupees = paise / 100;
   const symbol = currency === "INR" ? "₹" : currency === "USD" ? "$" : `${currency} `;
   return `${symbol}${new Intl.NumberFormat("en-IN").format(rupees)}`;
 }
@@ -152,8 +155,8 @@ export function DomainHero({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mx-auto w-full max-w-6xl px-4 pt-14 sm:px-6">
-      <p className="text-[12px] font-bold uppercase tracking-[0.14em] text-brand-600">{kicker}</p>
+    <div className="mx-auto w-full px-4 pt-14 sm:px-6" style={{ maxWidth: "78rem" }}>
+      <p className="kicker">{kicker}</p>
       <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
         <h1 className="display-title text-3xl sm:text-4xl">{title}</h1>
         {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
@@ -164,13 +167,17 @@ export function DomainHero({
 }
 
 export function DomainGrid({ children }: { children: ReactNode }) {
-  return <div className="mx-auto grid w-full max-w-6xl gap-4 px-4 py-10 sm:px-6 lg:grid-cols-3">{children}</div>;
+  return (
+    <div className="mx-auto grid w-full gap-4 px-4 py-10 sm:px-6 lg:grid-cols-3" style={{ maxWidth: "78rem" }}>
+      {children}
+    </div>
+  );
 }
 
 export function filterCls(active: boolean) {
   return cn(
-    "rounded-md border px-2.5 py-1.5 text-[12.5px] font-medium transition-colors",
-    active ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line bg-surface text-ink-soft hover:text-ink"
+    "rounded-lg border px-2.5 py-1.5 text-[12.5px] font-medium transition-[background-color,border-color,color] duration-200",
+    active ? "border-brand-500 bg-brand-50 text-brand-700" : "border-line bg-surface text-ink-soft hover:border-brand-300 hover:text-ink"
   );
 }
 

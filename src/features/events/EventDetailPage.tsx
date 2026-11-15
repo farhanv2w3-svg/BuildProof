@@ -56,7 +56,7 @@ function RealEventDetail({ eventId }: { eventId: string }) {
         <BackLink />
         <ErrorBanner message="Event not found — it may not exist, or it is not published publicly." />
         <div className="mt-4">
-          <ButtonLink to="/app/events" variant="secondary">Browse Events</ButtonLink>
+          <ButtonLink to="/events" variant="secondary">Browse Events</ButtonLink>
         </div>
       </div>
     );
@@ -67,7 +67,7 @@ function RealEventDetail({ eventId }: { eventId: string }) {
 
 function BackLink() {
   return (
-    <Link to="/app/events" className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand-700 hover:underline">
+    <Link to="/events" className="mb-4 inline-flex items-center gap-1.5 text-[13px] font-semibold text-brand-700 hover:underline">
       <ArrowLeft className="h-4 w-4" aria-hidden />
       Back to Events
     </Link>

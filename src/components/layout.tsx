@@ -13,6 +13,7 @@ const exploreNav = [
   { to: "/startups-funding", label: "Startups & Funding" },
   { to: "/hardware", label: "Hardware Innovation" },
   { to: "/opportunities", label: "Opportunities" },
+  { to: "/events", label: "Events" },
 ];
 
 const publicNav = [
@@ -181,6 +182,7 @@ export function Footer() {
             ["/solutions", "Solutions Marketplace"],
             ["/company-projects", "Company Projects"],
             ["/hardware", "Hardware Innovation"],
+            ["/events", "Events"],
           ]}
         />
         <FooterCol
@@ -202,7 +204,7 @@ export function Footer() {
           ]}
         />
         <div>
-          <h4 className="font-display text-[13px] font-bold text-ink">Legal & contact</h4>
+          <h3 className="font-display text-[13px] font-bold text-ink">Legal & contact</h3>
           <ul className="mt-3 space-y-2 text-[13px]">
             <li><Link className="text-ink-soft hover:text-ink" to="/privacy">Privacy policy</Link></li>
             <li><Link className="text-ink-soft hover:text-ink" to="/terms">Terms of use</Link></li>
@@ -210,7 +212,7 @@ export function Footer() {
               <a className="text-ink-soft hover:text-ink" href="mailto:hello@buildproof.org">
                 hello@buildproof.org
               </a>
-              <p className="mt-1 text-[11.5px] text-ink-soft/80">
+              <p className="mt-1 text-[11.5px] text-ink-soft">
                 Placeholder contact while the project is unverified — update before launch.
               </p>
             </li>
@@ -231,7 +233,7 @@ export function Footer() {
 function FooterCol({ title, links }: { title: string; links: [string, string][] }) {
   return (
     <div>
-      <h4 className="font-display text-[13px] font-bold text-ink">{title}</h4>
+      <h3 className="font-display text-[13px] font-bold text-ink">{title}</h3>
       <ul className="mt-3 space-y-2 text-[13px]">
         {links.map(([to, label]) => (
           <li key={to + label}>

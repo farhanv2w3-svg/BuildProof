@@ -5,6 +5,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import App from "./App";
 import { AuthProvider } from "./lib/auth";
 import "./styles/global.css";
+import { registerBuildProofServiceWorker } from "./lib/notificationPush";
+
+void registerBuildProofServiceWorker();
 
 const queryClient = new QueryClient({
   defaultOptions: {

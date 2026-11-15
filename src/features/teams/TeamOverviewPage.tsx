@@ -1,9 +1,12 @@
+import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import { fetchTeam, fetchInterviews, fetchFeasibility, fetchPrototype, fetchTeamDecisions } from "../../lib/api";
-import { Card, CardHeader, Badge, LoadingBlock, EmptyState } from "../../components/ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchTeam, fetchInterviews, fetchFeasibility, fetchPrototype, fetchTeamDecisions, fetchTeamMembers, fetchComments, addComment, errMessage } from "../../lib/api";
+import { Card, CardHeader, Badge, Button, LoadingBlock, EmptyState, Textarea, ErrorBanner } from "../../components/ui";
 import { teamStatusLabel, interviewGap } from "../../lib/rbac";
 import { formatDate } from "../../lib/utils";
+import { ProofCardBuilder } from "../proof-cards/ProofCardBuilder";
+import { useAuth } from "../../lib/auth";
 
 /** Team overview: stage summary of validation → feasibility → testing → card. */
 export default function TeamOverviewPage() {
@@ -28,11 +31,22 @@ export default function TeamOverviewPage() {
     queryFn: () => fetchPrototype(teamId!),
     enabled: !!teamId,
   });
+  const { data: members } = useQuery({
+    queryKey: ["teamMembers", teamId],
+    queryFn: () => fetchTeamMembers(teamId!),
+    enabled: !!teamId,
+  });
   const { data: decisions } = useQuery({
     queryKey: ["decisions", teamId],
     queryFn: () => fetchTeamDecisions(teamId!),
     enabled: !!teamId,
   });
+  const { user } = useAuth();
+  const [cardFormOpen, setCardFormOpen] = useState(false);
+
+  const isEditor = (members ?? []).some(
+    (m) => m.user_id === user?.id && m.status === "accepted"
+  );
 
   if (isLoading) return <LoadingBlock />;
   if (!team) return <EmptyState title="Team not available" />;
@@ -97,6 +111,32 @@ export default function TeamOverviewPage() {
           </ul>
         </Card>
       )}
+
+      {/* B7 — team comments. fetchComments/addComment were implemented but
+          never reachable from any page. Reviewer-audience comments are filtered
+          by RLS: ordinary members never receive them. */}
+      {isEditor && <TeamComments teamId={team.id} />}
+
+      {/* B6 — Proof Card creation. Mounted here so team editors can actually
+          create the card; the builder was fully implemented but never rendered
+          anywhere before (createCard was unreachable). */}
+      {isEditor && (
+        <Card>
+          <CardHeader
+            title="Proof Card"
+            sub="Compile your validated work into a card. It starts as a private draft — only reviewed, approved cards can ever be published by staff."
+          />
+          <div className="px-5 pb-5">
+            {!cardFormOpen ? (
+              <Button size="sm" onClick={() => setCardFormOpen(true)}>
+                Build a Proof Card for this team
+              </Button>
+            ) : (
+              <ProofCardBuilder teamId={team.id} />
+            )}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -108,5 +148,71 @@ function StageChip({ n, title, state, to }: { n: number; title: string; state: s
       <p className="mt-0.5 text-[13.5px] font-bold text-ink">{title}</p>
       <p className="mt-0.5 text-[11.5px] text-ink-soft">{state}</p>
     </Link>
+  );
+}
+
+/** B7 — team comments (audience "team"). Author attribution comes from the
+ * joined profile; the database policies already bind author_id to auth.uid()
+ * so impersonation is impossible. */
+function TeamComments({ teamId }: { teamId: string }) {
+  const { user } = useAuth();
+  const qc = useQueryClient();
+  const [body, setBody] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const { data: comments } = useQuery({
+    queryKey: ["teamComments", teamId],
+    queryFn: () => fetchComments(teamId, null),
+  });
+
+  const post = async () => {
+    setErr(null);
+    if (body.trim().length < 1) return;
+    setBusy(true);
+    try {
+      await addComment(teamId, user!.id, body.trim(), "team");
+      setBody("");
+      await qc.invalidateQueries({ queryKey: ["teamComments", teamId] });
+    } catch (e) {
+      setErr(errMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader title="Team notes" sub="Visible to you and your reviewers. Author names are the poster's own." />
+      <div className="px-5 pb-5">
+        {(comments ?? []).length === 0 ? (
+          <p className="text-[13px] text-ink-soft">No notes yet.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {(comments ?? []).map((c) => (
+              <li key={c.id} className="rounded-lg border border-line bg-canvas px-3 py-2 text-[13px]">
+                <p className="font-semibold">
+                  {c.profile?.full_name ?? "Member"}
+                  <span className="ml-2 text-[11.5px] font-normal text-ink-soft">{formatDate(c.created_at)}</span>
+                </p>
+                {c.body}
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="mt-3 flex flex-wrap items-start gap-2">
+          <Textarea
+            className="min-w-[240px] flex-1"
+            rows={2}
+            maxLength={2000}
+            placeholder="Add a note for the team and reviewers…"
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            aria-label="Comment"
+          />
+          <Button loading={busy} onClick={post}>Post</Button>
+        </div>
+        {err && <div className="mt-2"><ErrorBanner message={err} /></div>}
+      </div>
+    </Card>
   );
 }

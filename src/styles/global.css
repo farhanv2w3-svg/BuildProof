@@ -1,44 +1,85 @@
 @import "tailwindcss";
 
 @theme {
-  /* BuildProof brand palette — deep teal-green primary, warm amber accent */
-  --color-brand-50: #f0f7f4;
-  --color-brand-100: #dcede6;
-  --color-brand-200: #b5dcd0;
-  --color-brand-300: #7dc0ad;
-  --color-brand-400: #3f9d85;
-  --color-brand-500: #21836d;
-  --color-brand-600: #1a6b58;
-  --color-brand-700: #175648;
-  --color-brand-800: #14433c;
-  --color-brand-900: #10312c;
-  --color-brand-950: #0a201d;
+  /* ---------------------------------------------------------------------
+     BuildProof design system — premium SaaS, vibrant-technology identity.
+     Primary: Deep Emerald #105B49 + Fresh Green #159875; selective lime.
+     Neutral: Soft Canvas / White / Soft Border / Forest Ink / Muted.
+     -------------------------------------------------------------------- */
 
-  --color-accent-50: #fdf8ef;
-  --color-accent-100: #f8ecda;
-  --color-accent-300: #ecc98a;
-  --color-accent-500: #d99033;
-  --color-accent-600: #b8721d;
-  --color-accent-700: #8f5714;
+  /* Brand ramp — mint surface (#DDF2E8) at 100, fresh green at 500,
+     deep emerald primary at 700, text-safe green for UI copy at 600. */
+  --color-brand-50: #f0faf7;
+  --color-brand-100: #ddf2e8;
+  --color-brand-200: #bce9db;
+  --color-brand-300: #8dd8c0;
+  --color-brand-400: #3fad8f;
+  --color-brand-500: #159875;
+  --color-brand-600: #0e7a5f;
+  --color-brand-700: #105b49;
+  --color-brand-800: #0b4638;
+  --color-brand-900: #08362b;
+  --color-brand-950: #052520;
 
-  --color-canvas: #f7f9f8;
+  /* Review / pending amber (supporting colour — sparing, consistent). */
+  --color-accent-50: #fdf6ea;
+  --color-accent-100: #faeeda;
+  --color-accent-300: #f0ce92;
+  --color-accent-500: #e7a53a;
+  --color-accent-600: #c9871f;
+  --color-accent-700: #96600f;
+
+  /* Electric lime — selective highlights only (never page backgrounds). */
+  --color-lime-100: #f4fcde;
+  --color-lime-300: #ddf89a;
+  --color-lime-400: #c7f36b;
+  --color-lime-500: #b3e75c;
+  --color-lime-700: #6f9427;
+  --color-lime-800: #48611b;
+
+  /* Research & learning (supporting). */
+  --color-research-soft: #ecf2fd;
+  --color-research-strong: #3b61b8;
+  --color-research: #4777d8;
+
+  /* Mentorship & collaboration (supporting). */
+  --color-mentor-soft: #f2eefb;
+  --color-mentor-strong: #6e4cb0;
+  --color-mentor: #8661c5;
+
+  /* Testing (supporting). */
+  --color-testing-soft: #e8f6f6;
+  --color-testing-strong: #17726f;
+  --color-testing: #239d9a;
+
+  /* Neutrals */
+  --color-canvas: #f6f9f6;
   --color-surface: #ffffff;
-  --color-ink: #101d19;
-  --color-ink-soft: #5b6b66;
-  --color-line: #e3e9e6;
-  --color-danger: #b42318;
-  --color-danger-soft: #fef3f2;
+  --color-line: #e5ece7;
+  --color-ink: #172720;
+  --color-ink-soft: #58675f;
+
+  /* Status */
+  --color-danger: #bf4343;
+  --color-danger-soft: #fceded;
   --color-success: #067647;
   --color-success-soft: #ecfdf3;
-  --color-warn: #b54708;
-  --color-warn-soft: #fffaeb;
+  --color-warn: #9a6612;
+  --color-warn-soft: #fcf5e6;
 
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-display: "Manrope", "Inter", ui-sans-serif, system-ui, sans-serif;
 
-  --radius-card: 14px;
-  --shadow-card: 0 1px 2px rgb(16 29 25 / 0.05), 0 1px 3px rgb(16 29 25 / 0.06);
-  --shadow-lift: 0 8px 24px rgb(16 29 25 / 0.09);
+  /* Radii — buttons/inputs 10–12px, cards 16px, modals 18–22px. */
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-card: 16px;
+
+  /* Soft, restrained elevation. */
+  --shadow-card: 0 1px 2px rgb(23 39 32 / 0.04), 0 1px 3px rgb(23 39 32 / 0.06);
+  --shadow-lift: 0 10px 30px rgb(23 39 32 / 0.10), 0 2px 6px rgb(23 39 32 / 0.06);
+  --shadow-hero: 0 24px 60px rgb(16 91 73 / 0.14), 0 6px 16px rgb(16 91 73 / 0.08);
 }
 
 @layer base {
@@ -57,15 +98,36 @@
     outline-offset: 2px;
     border-radius: 4px;
   }
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+  }
+  /* Numeric data stays aligned in tables, stats and lists. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Reduced motion — transitions/animation collapse to instant. */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer components {
   .container-xl {
-    @apply mx-auto w-full max-w-6xl px-4 sm:px-6 lg:px-8;
+    @apply mx-auto w-full px-4 sm:px-6 lg:px-8;
+    max-width: 78rem;
   }
   .display-title {
     font-family: var(--font-display);
     @apply font-extrabold tracking-tight text-ink;
+  }
+  /* Recurring motif A: proof-trail kicker for section headings. */
+  .kicker {
+    @apply text-[12px] font-bold uppercase tracking-[0.14em] text-brand-600;
   }
   .prose-page p + p {
     @apply mt-4;
