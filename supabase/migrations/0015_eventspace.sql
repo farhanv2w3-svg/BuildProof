@@ -438,6 +438,41 @@ $$;
 create trigger es_events_validate before insert or update on public.es_events
 for each row execute function public.es_validate_event();
 
+-- ----------------------------------------------------------------------------
+-- Event staff (managers + judges granted by an authorised organiser)
+-- Defined before the es_events policies because those policies reference this
+-- table; policy expressions are fully analysed at CREATE POLICY time.
+-- ----------------------------------------------------------------------------
+create table public.es_event_staff (
+  id uuid primary key default gen_random_uuid(),
+  event_id uuid not null references public.es_events (id) on delete cascade,
+  user_id uuid not null references public.profiles (id) on delete cascade,
+  role text not null check (role in ('manager', 'judge')),
+  granted_by uuid not null references public.profiles (id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (event_id, user_id, role)
+);
+
+create index es_event_staff_user_idx on public.es_event_staff (user_id);
+create index es_event_staff_event_idx on public.es_event_staff (event_id);
+
+alter table public.es_event_staff enable row level security;
+
+create policy "participants & staff read staff list" on public.es_event_staff
+for select to authenticated
+using (public.es_can_manage_event(event_id) or user_id = auth.uid());
+
+create policy "managers grant staff" on public.es_event_staff
+for insert to authenticated
+with check (
+  public.es_can_manage_event(event_id)
+  and user_id <> auth.uid()
+);
+
+create policy "managers revoke staff" on public.es_event_staff
+for delete to authenticated
+using (public.es_can_manage_event(event_id));
+
 -- RLS ------------------------------------------------------------------
 alter table public.es_events enable row level security;
 
@@ -485,39 +520,6 @@ using (
   (public.es_can_manage_event(id) and status = 'draft')
   or public.is_platform_admin()
 );
-
--- ----------------------------------------------------------------------------
--- Event staff (managers + judges granted by an authorised organiser)
--- ----------------------------------------------------------------------------
-create table public.es_event_staff (
-  id uuid primary key default gen_random_uuid(),
-  event_id uuid not null references public.es_events (id) on delete cascade,
-  user_id uuid not null references public.profiles (id) on delete cascade,
-  role text not null check (role in ('manager', 'judge')),
-  granted_by uuid not null references public.profiles (id) on delete cascade,
-  created_at timestamptz not null default now(),
-  unique (event_id, user_id, role)
-);
-
-create index es_event_staff_user_idx on public.es_event_staff (user_id);
-create index es_event_staff_event_idx on public.es_event_staff (event_id);
-
-alter table public.es_event_staff enable row level security;
-
-create policy "participants & staff read staff list" on public.es_event_staff
-for select to authenticated
-using (public.es_can_manage_event(event_id) or user_id = auth.uid());
-
-create policy "managers grant staff" on public.es_event_staff
-for insert to authenticated
-with check (
-  public.es_can_manage_event(event_id)
-  and user_id <> auth.uid()
-);
-
-create policy "managers revoke staff" on public.es_event_staff
-for delete to authenticated
-using (public.es_can_manage_event(event_id));
 
 -- Admin RPC: organiser application review (SECURITY DEFINER; admin-gated).
 create or replace function public.es_review_organizer(
@@ -645,48 +647,8 @@ create table public.es_event_teams (
 create index es_event_teams_event_idx on public.es_event_teams (event_id);
 create index es_event_teams_leader_idx on public.es_event_teams (leader_user_id);
 
-alter table public.es_event_teams enable row level security;
-
-create policy "read event teams" on public.es_event_teams
-for select to authenticated
-using (
-  public.es_can_manage_event(event_id)
-  or public.es_is_team_member(id)
-  or public.es_is_participant(event_id)
-  or exists (
-    select 1 from public.es_event_team_members m
-    where m.team_id = id and m.user_id = auth.uid()
-  )
-);
-
-create policy "participants create teams" on public.es_event_teams
-for insert to authenticated
-with check (
-  created_by = auth.uid()
-  and leader_user_id = auth.uid()
-  and public.es_is_participant(event_id)
-  and public.es_rate_ok('es_team_create:' || auth.uid()::text, 10, interval '1 day')
-);
-
-create policy "leader & managers update teams" on public.es_event_teams
-for update to authenticated
-using (
-  leader_user_id = auth.uid() or public.es_can_manage_event(event_id)
-)
-with check (
-  leader_user_id = auth.uid() or public.es_can_manage_event(event_id)
-);
-
-create policy "leader & managers delete teams" on public.es_event_teams
-for delete to authenticated
-using (
-  (leader_user_id = auth.uid() or public.es_can_manage_event(event_id))
-  and not exists (
-    select 1 from public.es_submissions s
-    where s.team_id = id and s.status in ('submitted', 'resubmitted', 'shortlisted', 'accepted')
-  )
-);
-
+-- Membership table is defined before the es_event_teams policies, which
+-- reference it (policy expressions are analysed at CREATE POLICY time).
 create table public.es_event_team_members (
   id uuid primary key default gen_random_uuid(),
   team_id uuid not null references public.es_event_teams (id) on delete cascade,
@@ -755,6 +717,38 @@ using (
     where t.id = team_id
       and (t.leader_user_id = auth.uid() or public.es_can_manage_event(t.event_id))
   )
+);
+
+alter table public.es_event_teams enable row level security;
+
+create policy "read event teams" on public.es_event_teams
+for select to authenticated
+using (
+  public.es_can_manage_event(event_id)
+  or public.es_is_team_member(id)
+  or public.es_is_participant(event_id)
+  or exists (
+    select 1 from public.es_event_team_members m
+    where m.team_id = id and m.user_id = auth.uid()
+  )
+);
+
+create policy "participants create teams" on public.es_event_teams
+for insert to authenticated
+with check (
+  created_by = auth.uid()
+  and leader_user_id = auth.uid()
+  and public.es_is_participant(event_id)
+  and public.es_rate_ok('es_team_create:' || auth.uid()::text, 10, interval '1 day')
+);
+
+create policy "leader & managers update teams" on public.es_event_teams
+for update to authenticated
+using (
+  leader_user_id = auth.uid() or public.es_can_manage_event(event_id)
+)
+with check (
+  leader_user_id = auth.uid() or public.es_can_manage_event(event_id)
 );
 
 -- Team-size guard + leader integrity on membership change.
@@ -977,6 +971,20 @@ create table public.es_submissions (
 create index es_submissions_event_idx on public.es_submissions (event_id, status);
 create index es_submissions_owner_idx on public.es_submissions (owner_user_id);
 create index es_submissions_team_idx on public.es_submissions (team_id);
+
+-- This policy was moved here from the es_event_teams section because its
+-- predicate references es_submissions, which is created later than the other
+-- team policies (policy expressions are analysed at CREATE POLICY time).
+create policy "leader & managers delete teams" on public.es_event_teams
+for delete to authenticated
+using (
+  (leader_user_id = auth.uid() or public.es_can_manage_event(event_id))
+  and not exists (
+    select 1 from public.es_submissions s
+    where s.team_id = id and s.status in ('submitted', 'resubmitted', 'shortlisted', 'accepted')
+  )
+);
+
 create trigger es_submissions_updated_at before update on public.es_submissions
 for each row execute procedure moddatetime (updated_at);
 
@@ -1450,26 +1458,6 @@ create policy "managers delete results" on public.es_results
 for delete to authenticated
 using (public.es_can_manage_event(event_id));
 
--- Public results view: only published results of published events, and only
--- showcase-safe project fields — never private payloads or judge data.
-create view public.es_public_results
-with (security_invoker = true) as
-select
-  r.id, r.event_id, r.award_id, r.submission_id, r.position, r.note,
-  a.name as award_name, a.category as award_category,
-  e.title as event_title, e.slug as event_slug,
-  sh.approved_title, sh.approved_summary, sh.approved_demo_url, sh.approved_github_url,
-  sh.team_attribution, sh.image_path, sh.status as showcase_status
-from public.es_results r
-join public.es_awards a on a.id = r.award_id
-join public.es_events e on e.id = r.event_id
-left join public.es_showcases sh on sh.submission_id = r.submission_id
-where r.published = true
-  and e.status in ('published', 'completed', 'archived')
-  and e.results_published = true;
-
-grant select on public.es_public_results to anon, authenticated;
-
 -- ----------------------------------------------------------------------------
 -- Announcements
 -- ----------------------------------------------------------------------------
@@ -1485,6 +1473,22 @@ create table public.es_announcements (
 );
 
 create index es_announcements_event_idx on public.es_announcements (event_id, created_at desc);
+
+-- Helper for the policy below (judges can read judge-audience announcements).
+-- Defined before the announcements policies because policy expressions are
+-- analysed at CREATE POLICY time and require referenced functions to exist.
+create or replace function public.es_is_assigned_judge_announcements(p_event_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.es_judge_assignments ja
+    where ja.event_id = p_event_id and ja.judge_user_id = auth.uid()
+  );
+$$;
 
 alter table public.es_announcements enable row level security;
 
@@ -1508,20 +1512,6 @@ with check (public.es_can_manage_event(event_id));
 create policy "managers delete announcements" on public.es_announcements
 for delete to authenticated
 using (public.es_can_manage_event(event_id));
-
--- helper used above (judges can read judge-audience announcements)
-create or replace function public.es_is_assigned_judge_announcements(p_event_id uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from public.es_judge_assignments ja
-    where ja.event_id = p_event_id and ja.judge_user_id = auth.uid()
-  );
-$$;
 
 -- ----------------------------------------------------------------------------
 -- Showcase (owner-approved, organiser-published)
@@ -1647,6 +1637,28 @@ $$;
 
 create trigger es_showcases_validate before insert or update on public.es_showcases
 for each row execute function public.es_validate_showcase();
+
+-- Public results view: only published results of published events, and only
+-- showcase-safe project fields — never private payloads or judge data.
+-- Moved below the es_showcases table, which this view joins (views are
+-- analysed at CREATE VIEW time).
+create view public.es_public_results
+with (security_invoker = true) as
+select
+  r.id, r.event_id, r.award_id, r.submission_id, r.position, r.note,
+  a.name as award_name, a.category as award_category,
+  e.title as event_title, e.slug as event_slug,
+  sh.approved_title, sh.approved_summary, sh.approved_demo_url, sh.approved_github_url,
+  sh.team_attribution, sh.image_path, sh.status as showcase_status
+from public.es_results r
+join public.es_awards a on a.id = r.award_id
+join public.es_events e on e.id = r.event_id
+left join public.es_showcases sh on sh.submission_id = r.submission_id
+where r.published = true
+  and e.status in ('published', 'completed', 'archived')
+  and e.results_published = true;
+
+grant select on public.es_public_results to anon, authenticated;
 
 -- Public showcase listing view (showcase-safe fields only).
 create view public.es_public_showcases
