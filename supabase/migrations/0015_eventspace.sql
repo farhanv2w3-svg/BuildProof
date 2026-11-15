@@ -22,7 +22,14 @@
 -- NOTE FOR OPERATORS: run this file once via `supabase db push` (or the SQL
 -- editor). It is idempotent-safe for re-runs only where noted; new policies
 -- use create policy which errors on duplicates by design (fail-loud).
+--
+-- The shared helper functions below are defined BEFORE the es_* tables they
+-- reference (they are used throughout the file, including by later DDL).
+-- PostgreSQL 14+ analyses `language sql` function bodies at CREATE time, so
+-- we disable that check for this migration session. Every function body is
+-- still fail-loud: it is fully parsed and validated on first actual call.
 -- ============================================================================
+set check_function_bodies = off;
 
 -- ----------------------------------------------------------------------------
 -- Shared helper functions (security definer; revocable; stable where possible)
