@@ -1,5 +1,6 @@
 import { requireSupabase, getSupabase } from "./supabase";
 import { sendNotification, writeAuditLog } from "./api";
+import { slugify } from "./eventspaceRules";
 import type {
   EsAnnouncementRow,
   EsAwardRow,
@@ -268,9 +269,12 @@ export async function createEventDraft(
   values: Partial<EsEventRow> & { title: string; category: EsEventRow["category"]; institution_name: string }
 ): Promise<EsEventRow> {
   const s = requireSupabase();
+  // slug is NOT NULL UNIQUE in the schema; the wizard only fills it when the
+  // user types one, so default it from the title (mirrors the UI preview).
+  const slug = values.slug && values.slug.trim() !== "" ? values.slug : slugify(values.title);
   const { data, error } = await s
     .from("es_events")
-    .insert(nullEmptyEventFields({ ...values, status: "draft" }))
+    .insert(nullEmptyEventFields({ ...values, slug, status: "draft" }))
     .select("*")
     .single();
   await fail(error);
