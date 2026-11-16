@@ -160,8 +160,8 @@ to anon;
 -- Helpers invoked inside anon-evaluated SELECT policies.
 grant execute on
   function public.can_read_team(uuid),
-  function public.is_org_admin(uuid),
-  function public.is_platform_admin()
+  public.is_org_admin(uuid),
+  public.is_platform_admin()
 to anon;
 
 -- Private storage limits — keep client validation and server config aligned.
@@ -221,23 +221,23 @@ to authenticated;
 -- Layer 3: EXECUTE on every policy-internal helper for authenticated.
 grant execute on
   function public.is_team_member(uuid),
-  function public.is_cohort_member(uuid),
-  function public.is_cohort_staff(uuid),
-  function public.is_institution_admin(uuid),
-  function public.has_any_role(text[]),
-  function public.can_read_team(uuid),
-  function public.can_edit_team_work(uuid),
-  function public.can_review_team_work(uuid),
-  function public.submitted_by_check(uuid, uuid),
-  function public.is_org_role(uuid, text[]),
-  function public.is_org_admin(uuid),
-  function public.is_platform_admin()
+  public.is_cohort_member(uuid),
+  public.is_cohort_staff(uuid),
+  public.is_institution_admin(uuid),
+  public.has_any_role(text[]),
+  public.can_read_team(uuid),
+  public.can_edit_team_work(uuid),
+  public.can_review_team_work(uuid),
+  public.submitted_by_check(uuid, uuid),
+  public.is_org_role(uuid, text[]),
+  public.is_org_admin(uuid),
+  public.is_platform_admin()
 to authenticated;
 
 -- Client-invoked RPCs (re-asserted; idempotent).
 grant execute on
   function public.accept_team_invite(uuid),
-  function public.find_user_id_by_email(text)
+  public.find_user_id_by_email(text)
 to authenticated;
 
 -- Hardening: trigger functions never need role EXECUTE.
