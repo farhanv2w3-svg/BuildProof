@@ -208,13 +208,69 @@ export async function getEventById(id: string): Promise<EsEventRow | null> {
   return (data ?? null) as EsEventRow | null;
 }
 
+/**
+ * The wizard stores unset optional fields as "" in React state, but Postgres
+ * cannot cast "" to timestamptz / url-check columns. Send NULL instead for
+ * every nullable es_events column.
+ */
+const ES_EVENT_NULLABLE_FIELDS = [
+  "full_description",
+  "cover_path",
+  "poster_path",
+  "logo_path",
+  "edition",
+  "theme",
+  "official_url",
+  "venue",
+  "city",
+  "state_name",
+  "country",
+  "online_instructions",
+  "map_url",
+  "starts_at",
+  "ends_at",
+  "registration_opens_at",
+  "registration_closes_at",
+  "submission_opens_at",
+  "submission_deadline",
+  "judging_starts_at",
+  "judging_ends_at",
+  "results_at",
+  "resubmit_until",
+  "eligibility_years",
+  "eligibility_departments",
+  "eligibility_institutions",
+  "eligibility_regions",
+  "age_note",
+  "registration_capacity",
+  "registration_note",
+  "confirmation_message",
+  "rules",
+  "submission_requirements",
+  "originality_terms",
+  "ip_terms",
+  "late_submission_terms",
+  "disqualification_terms",
+  "contact_name",
+  "contact_email",
+  "contact_phone",
+] as const;
+
+function nullEmptyEventFields<T extends Record<string, unknown>>(payload: T): T {
+  const out: Record<string, unknown> = { ...payload };
+  for (const key of ES_EVENT_NULLABLE_FIELDS) {
+    if (out[key] === "") out[key] = null;
+  }
+  return out as T;
+}
+
 export async function createEventDraft(
   values: Partial<EsEventRow> & { title: string; category: EsEventRow["category"]; institution_name: string }
 ): Promise<EsEventRow> {
   const s = requireSupabase();
   const { data, error } = await s
     .from("es_events")
-    .insert({ ...values, status: "draft" })
+    .insert(nullEmptyEventFields({ ...values, status: "draft" }))
     .select("*")
     .single();
   await fail(error);
@@ -223,7 +279,12 @@ export async function createEventDraft(
 
 export async function updateEvent(id: string, values: Partial<EsEventRow>): Promise<EsEventRow> {
   const s = requireSupabase();
-  const { data, error } = await s.from("es_events").update(values).eq("id", id).select("*").single();
+  const { data, error } = await s
+    .from("es_events")
+    .update(nullEmptyEventFields(values))
+    .eq("id", id)
+    .select("*")
+    .single();
   await fail(error);
   return data as EsEventRow;
 }

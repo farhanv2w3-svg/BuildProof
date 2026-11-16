@@ -15,12 +15,12 @@ import { describe, expect, it } from "vitest";
 
 /* Source texts under test, imported as raw strings (Vite's ?raw loader —
    types come from vite/client, already referenced in tsconfig "types"). */
-import m0005 from "../../supabase/migrations/0005_grants_fix.sql?raw";
-import m0006 from "../../supabase/migrations/0006_security_policies.sql?raw";
-import m0007 from "../../supabase/migrations/0007_consent_and_payments.sql?raw";
-import m0008 from "../../supabase/migrations/0008_accept_team_application.sql?raw";
-import m0009 from "../../supabase/migrations/0009_proof_card_evidence_archive.sql?raw";
-import m0011 from "../../supabase/migrations/0011_team_chat_and_project_visibility.sql?raw";
+import m0005Raw from "../../supabase/migrations/0005_grants_fix.sql?raw";
+import m0006Raw from "../../supabase/migrations/0006_security_policies.sql?raw";
+import m0007Raw from "../../supabase/migrations/0007_consent_and_payments.sql?raw";
+import m0008Raw from "../../supabase/migrations/0008_accept_team_application.sql?raw";
+import m0009Raw from "../../supabase/migrations/0009_proof_card_evidence_archive.sql?raw";
+import m0011Raw from "../../supabase/migrations/0011_team_chat_and_project_visibility.sql?raw";
 import apiTs from "./api?raw";
 import appLayoutTsx from "../components/AppLayout?raw";
 import publicProblemsTsx from "../pages/PublicProblemsPage?raw";
@@ -38,7 +38,19 @@ import proofCardDetailTsx from "../features/proof-cards/ProofCardDetailPage?raw"
 import attachmentsCardTsx from "../features/evidence/AttachmentsCard?raw";
 import eventsCardTsx from "../features/events/EventCard?raw";
 import eventsDetailTsx from "../features/events/EventDetailPage?raw";
-import m0010 from "../../supabase/migrations/0010_events_public_access.sql?raw";
+import m0010Raw from "../../supabase/migrations/0010_events_public_access.sql?raw";
+
+/* Working-tree line endings vary with git's autocrlf (CRLF on Windows
+   checkouts). The multi-line statement markers below expect LF, so every
+   source text is normalised once. */
+const lf = (s: string): string => s.replace(/\r\n/g, "\n");
+const m0005 = lf(m0005Raw);
+const m0006 = lf(m0006Raw);
+const m0007 = lf(m0007Raw);
+const m0008 = lf(m0008Raw);
+const m0009 = lf(m0009Raw);
+const m0011 = lf(m0011Raw);
+const m0010 = lf(m0010Raw);
 
 /* -------------------------------------------------------------------------- */
 /*  1. Pure mirrored rules                                                    */
