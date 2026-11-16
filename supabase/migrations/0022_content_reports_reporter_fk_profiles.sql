@@ -22,17 +22,13 @@
 -- ============================================================================
 
 do $$
-declare
-  fk_name text;
 begin
-  select conname into fk_name
-  from pg_constraint
-  where conrelid = 'public.content_reports'::regclass
-    and contype = 'f'
-    and conkey = array['reporter'::attnum]::smallint[]
-    and confrelid = 'auth.users'::regclass;
-  if fk_name is not null then
-    execute format('alter table public.content_reports drop constraint %I', fk_name);
+  if exists (
+    select 1 from pg_constraint
+    where conname = 'content_reports_reporter_fkey'
+      and conrelid = 'public.content_reports'::regclass
+  ) then
+    alter table public.content_reports drop constraint content_reports_reporter_fkey;
   end if;
 end $$;
 
