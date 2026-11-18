@@ -112,40 +112,84 @@ Deno.serve(async (request) => {
     }
   }
   if (!userId) {
-    const { data: dueRows } = await supabase
+    const { data: dueRows, error: dueError } = await supabase
       .from("registration_notification_outbox")
       .select("user_id")
       .in("status", ["pending", "failed"])
       .lte("next_attempt_at", new Date().toISOString())
       .limit(20);
+    if (dueError) {
+      console.error("outbox due query failed:", dueError.message);
+      return json({
+        ok: false,
+        error: "outbox query failed",
+        detail: dueError.message,
+      }, 500);
+    }
     userIds = (dueRows ?? []).map((row) => String(row.user_id));
   }
 
+  let delivered = 0;
+  let failed = 0;
+  let errored = 0;
   for (const targetUserId of userIds) {
-    await processUser(supabase, targetUserId, botToken, chatId);
+    const outcome = await processUser(
+      supabase,
+      targetUserId,
+      botToken,
+      chatId,
+    );
+    if (outcome === "sent") delivered += 1;
+    else if (outcome === "failed") failed += 1;
+    else if (outcome === "error") errored += 1;
   }
-  return json({ ok: true, processed: userIds.length });
+
+  if (errored > 0) {
+    return json({
+      ok: false,
+      processed: userIds.length,
+      delivered,
+      failed,
+      errors: errored,
+    }, 500);
+  }
+  return json({
+    ok: failed === 0,
+    processed: userIds.length,
+    delivered,
+    failed,
+  }, failed === 0 ? 200 : 502);
 });
+
+type Outcome = "sent" | "failed" | "error" | "skipped";
 
 async function processUser(
   supabase: SupabaseClient<any>,
   userId: string,
   botToken: string,
   chatId: string,
-) {
+): Promise<Outcome> {
   const { data, error } = await supabase
     .from("registration_notification_outbox")
     .select("user_id,email,display_name,registered_at,status,attempt_count")
     .eq("user_id", userId)
     .single();
 
-  if (error || !data || data.status === "sent") return;
+  if (error) {
+    console.error("outbox row query failed:", error.message);
+    return "error";
+  }
+  if (!data || data.status === "sent") return "skipped";
 
   const { data: claimed, error: claimError } = await supabase.rpc(
     "claim_registration_notification",
     { target_user_id: userId },
   );
-  if (claimError || claimed !== true || data.status === "sent") return;
+  if (claimError) {
+    console.error("claim rpc failed:", claimError.message);
+    return "error";
+  }
+  if (claimed !== true) return "skipped";
 
   const lines = [
     "BuildProof new registration",
@@ -170,13 +214,12 @@ async function processUser(
       },
     );
   } catch {
-    await markFailed(
+    return await markFailed(
       supabase,
       userId,
       (data.attempt_count ?? 0) + 1,
       "Telegram request failed",
     );
-    return;
   }
 
   const telegramResult = await readTelegramResponse(
@@ -185,16 +228,15 @@ async function processUser(
     chatId,
   );
   if (!telegramResult.ok) {
-    await markFailed(
+    return await markFailed(
       supabase,
       userId,
       (data.attempt_count ?? 0) + 1,
       telegramResult.error_description ?? "Telegram API rejected delivery",
     );
-    return;
   }
 
-  await supabase
+  const { error: sentError } = await supabase
     .from("registration_notification_outbox")
     .update({
       status: "sent",
@@ -204,6 +246,12 @@ async function processUser(
     })
     .eq("user_id", userId)
     .eq("status", "processing");
+
+  if (sentError) {
+    console.error("outbox sent update failed:", sentError.message);
+    return "error";
+  }
+  return "sent";
 }
 
 async function readTelegramResponse(
@@ -320,9 +368,9 @@ async function markFailed(
   userId: string,
   attempts: number,
   message: string,
-) {
+): Promise<Outcome> {
   const delayMinutes = Math.min(60, 2 ** Math.min(attempts - 1, 5));
-  await supabase
+  const { error } = await supabase
     .from("registration_notification_outbox")
     .update({
       status: "failed",
@@ -333,4 +381,10 @@ async function markFailed(
       updated_at: new Date().toISOString(),
     })
     .eq("user_id", userId);
+
+  if (error) {
+    console.error("outbox failed update failed:", error.message);
+    return "error";
+  }
+  return "failed";
 }

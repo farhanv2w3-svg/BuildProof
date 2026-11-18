@@ -104,3 +104,35 @@ Android and desktop Chromium/Firefox browsers generally support web push, but
 availability and battery behavior vary. iOS support generally requires an
 eligible installed PWA/web app and browser permission. Unsupported or denied
 browsers fail gracefully and are not prompted repeatedly by this application.
+
+## Worker privileges and credentials
+
+Delivery workers run with the service role (`SUPABASE_SERVICE_ROLE_KEY`). This
+project's `public` schema grants `anon`, `authenticated` and `service_role` only
+`Dxtm` by default, so every worker table must be granted explicitly. Migration
+`0024_notification_worker_privileges.sql` grants the minimum the workers need:
+
+- `service_role`: `SELECT, UPDATE` on `registration_notification_outbox`;
+  `EXECUTE` on `claim_registration_notification(uuid)`.
+- `service_role`: `SELECT, UPDATE` on `push_delivery_outbox`;
+  `SELECT, DELETE` on `push_subscriptions`.
+
+If a worker returns `42501 permission denied for table …`, the grants above are
+missing — do not widen browser-role access to compensate.
+
+Credentials must be real values, not placeholders:
+
+- `TELEGRAM_BOT_TOKEN` — full BotFather token (`<digits>:<35+ chars>`), and
+  `TELEGRAM_CHAT_ID` — numeric chat id. A wrong token makes Telegram return
+  `404 Not Found`, which the worker records in `last_error`.
+- `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` — URL-safe base64 **without** `=`
+  padding (`npx web-push generate-vapid-keys`). Standard base64 with padding is
+  rejected by `web-push`.
+- Supabase Auth SMTP (dashboard → Authentication → Emails → SMTP) uses
+  `smtp.gmail.com:587`, the full Gmail address and a 16-character Google **App
+  Password** (requires 2-Step Verification). A normal account password is
+  rejected with `535-5.7.8 Username and Password not accepted`.
+
+Verify a tick with `select id, status_code, content from net._http_response
+order by id desc limit 4;` and the queue with
+`select status, count(*) from public.registration_notification_outbox group by 1;`.
