@@ -85,7 +85,13 @@ Deno.serve(async (request) => {
       if (!subscription) continue;
 
       try {
-        await webpush.sendNotification(subscription, JSON.stringify(job.payload));
+        await webpush.sendNotification(
+          {
+            endpoint: subscription.endpoint,
+            keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+          },
+          JSON.stringify(job.payload),
+        );
         const { error: sentError } = await supabase.from("push_delivery_outbox").update({
           status: "sent",
           delivered_at: new Date().toISOString(),
